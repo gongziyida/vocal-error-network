@@ -2,42 +2,82 @@ import numpy as np
 from scipy.stats import norm
 from scipy.sparse import random as srandom
 
-class HVC_Aiv:
-    def __init__(self, N_Aiv, N_HVC, c, w0_mean, w0_std, phi, tau_Aiv):
-        self.N_Aiv, self.N_HVC = N_Aiv, N_HVC
+# A: Aiv; H: rH; I: interneuron
+class AivFF:
+    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A):
+        self.N_A, self.N_H = N_A, N_H
         self.c, self.w0_mean, self.w0_std = c, w0_mean, w0_std
         self.phi = phi
-        self.tau_Aiv = tau_Aiv
+        self.tau_A = tau_A
 
         rv = norm(loc=w0_mean, scale=w0_std)
         if c == 1:
-            self.W = np.abs(rv.rvs((N_Aiv, N_HVC)))
+            self.W = np.abs(rv.rvs((N_A, N_H)))
         else:
-            self.W = srandom(N_Aiv, N_HVC, c, 'csc', data_rvs=rv.rvs)
+            self.W = srandom(N_A, N_H, c, 'csc', data_rvs=rv.rvs)
             self.W.data = np.abs(self.W.data)
 
-    def sim(self, Aiv0, HVC_rates, aud, save_W_ts, T, dt, noise_strength,
+    def sim(self, rA0, rH, aud, save_W_ts, T, dt, noise_strength,
             plasticity=None, lr=0, **plasticity_args):
         rng = np.random.default_rng()
-        Aiv_rates = np.zeros((T, self.N_Aiv))
-        Aiv_rates[0] = Aiv0
+        rA = np.zeros((T, self.N_A))
+        rA[0] = rA0
 
         Ws = [self.W.copy()]
         mean_HVC_input = np.zeros(T)
 
         for t in range(1, T):
-            aux = self.W @ HVC_rates[t-1]
+            aux = self.W @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
-            noise = rng.normal(0, noise_strength, size=self.N_Aiv)
-            dAiv = -Aiv_rates[t-1] + self.phi(aux + aud[t-1] + noise)
-            Aiv_rates[t] = Aiv_rates[t-1] + dAiv * dt / self.tau_Aiv
+            noise = rng.normal(0, noise_strength, size=self.N_A)
+            drA = -rA[t-1] + self.phi(aux + aud[t-1] + noise)
+            rA[t] = rA[t-1] + drA * dt / self.tau_A
             if lr != 0:
-                plasticity(self.W, Aiv_rates[t], HVC_rates[t], lr, 
+                plasticity(self.W, rA[t], rH[t], lr, 
                            **plasticity_args)
             if t in save_W_ts:
                 Ws.append(self.W.copy())
         
-        return Aiv_rates, Ws, mean_HVC_input
+        return rA, Ws, mean_HVC_input
+
+class AivWilsonCowan(AivFF):
+    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
+                 N_I, tau_I, JEE, JEI, JIE, JII):
+        super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A)
+        self.N_I, self.tau_I = N_I, tau_I
+        self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
+
+    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength,
+            plasticity=None, lr=0, **plasticity_args):
+        rng = np.random.default_rng()
+        rA = np.zeros((T, self.N_A))
+        rI = np.zeros((T, self.N_I))
+        rA[0] = rA0
+        rI[0] = I0
+
+        Ws = [self.W.copy()]
+        mean_HVC_input = np.zeros(T)
+
+        for t in range(1, T):
+            aux = self.W @ rH[t-1]
+            mean_HVC_input[t-1] = aux.mean()
+            noise = rng.normal(0, noise_strength, size=self.N_A)
+            rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
+            rec = self.JEE * rA_mean - self.JEI * rI_mean
+            drA = -rA[t-1] + self.phi(aux + aud[t-1] + rec + noise)
+            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean)
+            rA[t] = rA[t-1] + drA * dt / self.tau_A
+            rI[t] = rI[t-1] + dI * dt / self.tau_I
+            if lr != 0:
+                plasticity(self.W, rA[t], rH[t], lr, 
+                           **plasticity_args)
+            if t in save_W_ts:
+                Ws.append(self.W.copy())
+        
+        return rA, rI, Ws, mean_HVC_input
+
+
+#### Helpful functions ####
 
 def generate_HVC(T, burst_ts, peak_rate, kernel_width):
     # burst_ts, peak_rate, and kernel_width must be a nested list of (N,) 
