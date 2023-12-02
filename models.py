@@ -47,11 +47,11 @@ class AivWilsonCowan(AivFF):
         self.N_I, self.tau_I = N_I, tau_I
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
-    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength,
+    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
             plasticity=None, lr=0, **plasticity_args):
         rng = np.random.default_rng()
         rA = np.zeros((T, self.N_A))
-        rI = np.zeros((T, self.N_I))
+        rI = np.zeros(T)
         rA[0] = rA0
         rI[0] = I0
 
@@ -65,7 +65,8 @@ class AivWilsonCowan(AivFF):
             rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
             rec = self.JEE * rA_mean - self.JEI * rI_mean
             drA = -rA[t-1] + self.phi(aux + aud[t-1] + rec + noise)
-            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean)
+            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean \
+                                     + ext_I)
             rA[t] = rA[t-1] + drA * dt / self.tau_A
             rI[t] = rI[t-1] + dI * dt / self.tau_I
             if lr != 0:
