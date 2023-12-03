@@ -51,7 +51,7 @@ class AivWilsonCowan(AivFF):
             plasticity=None, lr=0, **plasticity_args):
         rng = np.random.default_rng()
         rA = np.zeros((T, self.N_A))
-        rI = np.zeros(T)
+        rI = np.zeros(T) # rI is already mean in WC model
         rA[0] = rA0
         rI[0] = I0
 
@@ -62,9 +62,9 @@ class AivWilsonCowan(AivFF):
             aux = self.W @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
             noise = rng.normal(0, noise_strength, size=self.N_A)
-            rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
-            recE = self.JEE * rA_mean - self.JEI * rI_mean
-            recI = self.JIE * rA_mean - self.JII * rI_mean
+            rA_mean = rA[t-1].mean()
+            recE = self.JEE * rA_mean - self.JEI * rI[t-1]
+            recI = self.JIE * rA_mean - self.JII * rI[t-1]
             drA = -rA[t-1] + self.phi(aux + aud[t-1] + recE + noise)
             dI = -rI[t-1] + self.phi(recI + ext_I)
             rA[t] = rA[t-1] + drA * dt / self.tau_A
