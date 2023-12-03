@@ -63,10 +63,10 @@ class AivWilsonCowan(AivFF):
             mean_HVC_input[t-1] = aux.mean()
             noise = rng.normal(0, noise_strength, size=self.N_A)
             rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
-            rec = self.JEE * rA_mean - self.JEI * rI_mean
-            drA = -rA[t-1] + self.phi(aux + aud[t-1] + rec + noise)
-            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean \
-                                     + ext_I)
+            recE = self.JEE * rA_mean - self.JEI * rI_mean
+            recI = self.JIE * rA_mean - self.JII * rI_mean
+            drA = -rA[t-1] + self.phi(aux + aud[t-1] + recE + noise)
+            dI = -rI[t-1] + self.phi(recI + ext_I)
             rA[t] = rA[t-1] + drA * dt / self.tau_A
             rI[t] = rI[t-1] + dI * dt / self.tau_I
             if lr != 0:
@@ -76,6 +76,52 @@ class AivWilsonCowan(AivFF):
                 Ws.append(self.W.copy())
         
         return rA, rI, Ws, mean_HVC_input
+
+class AivRecPlasticity(AivWilsonCowan):
+    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
+                 N_I, tau_I, JEE, JEI, JIE, JII, wEE0_std):
+        super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A, 
+                         N_I, tau_I, JEE, JEI, JIE, JII)
+        rv = norm(loc=0, scale=wEE0_std)
+        if c == 1:
+            self.WEE = rv.rvs((N_A, N_A)) # abs not necessary bc. JEE
+        else:
+            self.WEE = srandom(N_A, N_A, c, 'csc', data_rvs=rv.rvs)
+
+    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
+            plasticity_H=None, lr_H=0, plasticity_H_args=dict(),
+            plasticity_EE=None, lr_EE=0, plasticity_EE_args=dict()):
+        rng = np.random.default_rng()
+        rA = np.zeros((T, self.N_A))
+        rI = np.zeros(T)
+        rA[0] = rA0
+        rI[0] = I0
+
+        Ws = [self.W.copy()]
+        WEEs = [self.WEE.copy()]
+        mean_HVC_input = np.zeros(T)
+
+        for t in range(1, T):
+            aux = self.W @ rH[t-1]
+            mean_HVC_input[t-1] = aux.mean()
+            noise = rng.normal(0, noise_strength, size=self.N_A)
+            rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
+            rec = self.JEE * rA_mean + self.WEE @ rA[t-1] - self.JEI * rI_mean
+            drA = -rA[t-1] + self.phi(aux + aud[t-1] + rec + noise)
+            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean \
+                                     + ext_I)
+            rA[t] = rA[t-1] + drA * dt / self.tau_A
+            rI[t] = rI[t-1] + dI * dt / self.tau_I
+            if lr_H != 0:
+                plasticity_H(self.W, rA[t], rH[t], lr_H, **plasticity_H_args)
+            if lr_EE != 0: # don't index the second arg in case of lags
+                plasticity_EE(self.WEE, rA[t], rA, lr_EE, **plasticity_EE_args)
+            if t in save_W_ts:
+                Ws.append(self.W.copy())
+                WEEs.append(self.WEE.copy())
+        
+        return rA, rI, Ws, WEEs, mean_HVC_input
+
 
 
 #### Helpful functions ####
