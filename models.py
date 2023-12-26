@@ -42,9 +42,9 @@ class AivFF:
 
 class AivWilsonCowan(AivFF):
     def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
-                 N_I, tau_I, JEE, JEI, JIE, JII):
+                 tau_I, JEE, JEI, JIE, JII):
         super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A)
-        self.N_I, self.tau_I = N_I, tau_I
+        self.tau_I = tau_I
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
     def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
@@ -79,9 +79,9 @@ class AivWilsonCowan(AivFF):
 
 class AivRecPlasticity(AivWilsonCowan):
     def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
-                 N_I, tau_I, JEE, JEI, JIE, JII, wEE0_std):
+                 tau_I, JEE, JEI, JIE, JII, wEE0_std):
         super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A, 
-                         N_I, tau_I, JEE, JEI, JIE, JII)
+                         tau_I, JEE, JEI, JIE, JII)
         rv = norm(loc=0, scale=wEE0_std)
         if c == 1:
             self.WEE = rv.rvs((N_A, N_A)) # abs not necessary bc. JEE
