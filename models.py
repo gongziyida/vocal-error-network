@@ -3,8 +3,9 @@ from scipy.stats import norm
 from scipy.sparse import random as srandom
 
 # A: Aiv; H: rH; I: interneuron
-class AivFF:
-    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A):
+class Aiv:
+    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
+                 tau_I, JEE, JEI, JIE, JII):
         self.N_A, self.N_H = N_A, N_H
         self.c, self.w0_mean, self.w0_std = c, w0_mean, w0_std
         self.phi = phi
@@ -16,35 +17,10 @@ class AivFF:
         else:
             self.W = srandom(N_A, N_H, c, 'csc', data_rvs=rv.rvs)
             self.W.data = np.abs(self.W.data)
-
-    def sim(self, rA0, rH, aud, save_W_ts, T, dt, noise_strength,
-            plasticity=None, lr=0, **plasticity_args):
-        rng = np.random.default_rng()
-        rA = np.zeros((T, self.N_A))
-        rA[0] = rA0
-
-        Ws = [self.W.copy()]
-        mean_HVC_input = np.zeros(T)
-
-        for t in range(1, T):
-            aux = self.W @ rH[t-1]
-            mean_HVC_input[t-1] = aux.mean()
-            noise = rng.normal(0, noise_strength, size=self.N_A)
-            drA = -rA[t-1] + self.phi(aux + aud[t-1] + noise)
-            rA[t] = rA[t-1] + drA * dt / self.tau_A
-            if lr != 0:
-                plasticity(self.W, rA[t], rH[t], lr, 
-                           **plasticity_args)
-            if t in save_W_ts:
-                Ws.append(self.W.copy())
-        
-        return rA, Ws, mean_HVC_input
-
-class AivWilsonCowan(AivFF):
-    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
-                 tau_I, JEE, JEI, JIE, JII):
-        super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A)
+            
         self.tau_I = tau_I
+        if JEI == 0:
+            print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
     def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
@@ -62,13 +38,15 @@ class AivWilsonCowan(AivFF):
             aux = self.W @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
             noise = rng.normal(0, noise_strength, size=self.N_A)
-            rA_mean = rA[t-1].mean()
-            recE = self.JEE * rA_mean - self.JEI * rI[t-1]
-            recI = self.JIE * rA_mean - self.JII * rI[t-1]
+            recE, recI = 0, 0
+            if self.JEI != 0: # recurrent; need to calc. rI
+                rA_mean = rA[t-1].mean()
+                recE = self.JEE * rA_mean - self.JEI * rI[t-1]
+                recI = self.JIE * rA_mean - self.JII * rI[t-1]
+                dI = -rI[t-1] + self.phi(recI + ext_I)
+                rI[t] = rI[t-1] + dI * dt / self.tau_I
             drA = -rA[t-1] + self.phi(aux + aud[t-1] + recE + noise)
-            dI = -rI[t-1] + self.phi(recI + ext_I)
             rA[t] = rA[t-1] + drA * dt / self.tau_A
-            rI[t] = rI[t-1] + dI * dt / self.tau_I
             if lr != 0:
                 plasticity(self.W, rA[t], rH[t], lr, 
                            **plasticity_args)
@@ -77,7 +55,7 @@ class AivWilsonCowan(AivFF):
         
         return rA, rI, Ws, mean_HVC_input
 
-class AivRecPlasticity(AivWilsonCowan):
+class AivRecPlasticity(Aiv):
     def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
                  tau_I, JEE, JEI, JIE, JII, wEE0_std):
         super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A, 
@@ -145,16 +123,19 @@ def generate_discrete_aud(T, N, tsyl_start, tsyl_end, syl):
         aud[max(0,int(np.round(ts))):min(T,int(np.round(te))),:] += syl[i]
     return aud
 
-def correlation(sig1, sig2, g): 
+def correlation(sig1, sig2, dim=2): 
     ''' 
-    sig1: (T, N)
-    sig2: (P, N)
-    g: Function
-        Applied to sig2
+    sig1: (T1, T2, ..., Tk, N)
+    sig2: (P, N) if dim == 2, or (T1, T2, ..., Tk, N) if dim == 1
+    dim: int
+        If 2, calculate corr(sig1[t], sig2[p]) and return (T, P)
+        If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk)
     '''
-    sig2 = g(sig2)
-    sig1 = (sig1 - sig1.mean(axis=1, keepdims=True)) / sig1.std(axis=1, keepdims=True)
-    sig2 = (sig2 - sig2.mean(axis=1, keepdims=True)) / sig2.std(axis=1, keepdims=True)
-    corr = sig1 @ sig2.T / sig1.shape[1]
+    sig1 = (sig1 - sig1.mean(axis=-1, keepdims=True)) / sig1.std(axis=-1, keepdims=True)
+    sig2 = (sig2 - sig2.mean(axis=-1, keepdims=True)) / sig2.std(axis=-1, keepdims=True)
+    if dim == 1:
+        corr = (sig1 * sig2).mean(axis=-1)
+    elif dim == 2:
+        corr = sig1 @ sig2.T / sig1.shape[-1]
     assert np.nanmax(np.abs(corr)) < 1 + 1e-5
     return corr
