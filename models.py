@@ -2,14 +2,16 @@ import numpy as np
 from scipy.stats import norm
 from scipy.sparse import random as srandom
 
-# A: Aiv; H: rH; I: interneuron
+# A: Aiv; H: rH; I: local inhibitory interneuron
 class Aiv:
-    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
-                 tau_I, JEE, JEI, JIE, JII):
+    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phiE, phiI, tauA,
+                 tauI, JEE, JEI, JIE, JII, w_inh=0, w_I=0):
         self.N_A, self.N_H = N_A, N_H
         self.c, self.w0_mean, self.w0_std = c, w0_mean, w0_std
-        self.phi = phi
-        self.tau_A = tau_A
+        self.phiE, self.phiI = phiE, phiI
+        self.tau_A, self.tau_I = tauA, tauI
+        self.w_inh = w_inh # Inhibition directly from HVC
+        self.w_I = w_I # HVC to the I population
 
         rv = norm(loc=w0_mean, scale=w0_std)
         if c == 1:
@@ -18,12 +20,11 @@ class Aiv:
             self.W = srandom(N_A, N_H, c, 'csc', data_rvs=rv.rvs)
             self.W.data = np.abs(self.W.data)
             
-        self.tau_I = tau_I
         if JEI == 0:
             print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
-    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
+    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, 
             plasticity=None, lr=0, **plasticity_args):
         rng = np.random.default_rng()
         rA = np.zeros((T, self.N_A))
@@ -35,70 +36,23 @@ class Aiv:
         mean_HVC_input = np.zeros(T)
 
         for t in range(1, T):
-            aux = self.W @ rH[t-1]
+            aux = (self.W - self.w_inh) @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
             noise = rng.normal(0, noise_strength, size=self.N_A)
             recE, recI = 0, 0
             if self.JEI != 0: # recurrent; need to calc. rI
-                rA_mean = rA[t-1].mean()
-                recE = self.JEE * rA_mean - self.JEI * rI[t-1]
-                recI = self.JIE * rA_mean - self.JII * rI[t-1]
-                dI = -rI[t-1] + self.phi(recI + ext_I)
+                recE = self.JEE * rA[t-1].mean() - self.JEI * rI[t-1]
+                recI = self.JIE * rA[t-1].mean() - self.JII * rI[t-1]
+                dI = -rI[t-1] + self.phiI(recI + self.w_I * rH[t-1].mean())
                 rI[t] = rI[t-1] + dI * dt / self.tau_I
-            drA = -rA[t-1] + self.phi(aux + aud[t-1] + recE + noise)
+            drA = -rA[t-1] + self.phiE(aux + aud[t-1] + recE + noise)
             rA[t] = rA[t-1] + drA * dt / self.tau_A
             if lr != 0:
-                plasticity(self.W, rA[t], rH[t], lr, 
-                           **plasticity_args)
+                plasticity(self, rA[t], rH[t], lr, **plasticity_args)
             if t in save_W_ts:
                 Ws.append(self.W.copy())
         
         return rA, rI, Ws, mean_HVC_input
-
-class AivRecPlasticity(Aiv):
-    def __init__(self, N_A, N_H, c, w0_mean, w0_std, phi, tau_A,
-                 tau_I, JEE, JEI, JIE, JII, wEE0_std):
-        super().__init__(N_A, N_H, c, w0_mean, w0_std, phi, tau_A, 
-                         tau_I, JEE, JEI, JIE, JII)
-        rv = norm(loc=0, scale=wEE0_std)
-        if c == 1:
-            self.WEE = rv.rvs((N_A, N_A)) # abs not necessary bc. JEE
-        else:
-            self.WEE = srandom(N_A, N_A, c, 'csc', data_rvs=rv.rvs)
-
-    def sim(self, rA0, I0, rH, aud, save_W_ts, T, dt, noise_strength, ext_I=0,
-            plasticity_H=None, lr_H=0, plasticity_H_args=dict(),
-            plasticity_EE=None, lr_EE=0, plasticity_EE_args=dict()):
-        rng = np.random.default_rng()
-        rA = np.zeros((T, self.N_A))
-        rI = np.zeros(T)
-        rA[0] = rA0
-        rI[0] = I0
-
-        Ws = [self.W.copy()]
-        WEEs = [self.WEE.copy()]
-        mean_HVC_input = np.zeros(T)
-
-        for t in range(1, T):
-            aux = self.W @ rH[t-1]
-            mean_HVC_input[t-1] = aux.mean()
-            noise = rng.normal(0, noise_strength, size=self.N_A)
-            rA_mean, rI_mean = rA[t-1].mean(), rI[t-1].mean()
-            rec = self.JEE * rA_mean + self.WEE @ rA[t-1] - self.JEI * rI_mean
-            drA = -rA[t-1] + self.phi(aux + aud[t-1] + rec + noise)
-            dI = -rI[t-1] + self.phi(self.JIE * rA_mean - self.JII * rI_mean \
-                                     + ext_I)
-            rA[t] = rA[t-1] + drA * dt / self.tau_A
-            rI[t] = rI[t-1] + dI * dt / self.tau_I
-            if lr_H != 0:
-                plasticity_H(self.W, rA[t], rH[t], lr_H, **plasticity_H_args)
-            if lr_EE != 0: # don't index the second arg in case of lags
-                plasticity_EE(self.WEE, rA[t], rA, lr_EE, **plasticity_EE_args)
-            if t in save_W_ts:
-                Ws.append(self.W.copy())
-                WEEs.append(self.WEE.copy())
-        
-        return rA, rI, Ws, WEEs, mean_HVC_input
 
 
 
