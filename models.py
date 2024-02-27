@@ -75,12 +75,13 @@ class EINet(WCNet):
         for t in range(1, T):
             aux = (self.W - self.w_inh) @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
-            noise = rng.normal(0, noise_strength, size=self.NE)
+            noiseE = rng.normal(0, noise_strength, size=self.NE)
+            noiseI = rng.normal(0, noise_strength, size=self.NI)
             recE = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
             recI = self.JIE @ rE[t-1] - self.JII @ rI[t-1]
-            dI = -rI[t-1] + self.phiI(recI + self.wI * rH[t-1].mean())
+            dI = -rI[t-1] + self.phiI(recI + self.wI * rH[t-1].mean() + noiseI)
             rI[t] = rI[t-1] + dI * dt / self.tauI
-            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + recE + noise)
+            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + recE + noiseE)
             rE[t] = rE[t-1] + drE * dt / self.tauE
             if lr != 0:
                 plasticity(self, rE[t], rH[t], lr, **plasticity_args)
@@ -91,25 +92,6 @@ class EINet(WCNet):
 
 
 #### Helpful functions ####
-
-def generate_HVC(T, burst_ts, peak_rate, kernel_width):
-    # burst_ts, peak_rate, and kernel_width must be a nested list of (N,) 
-    # with inner dimension (num of bursts,)
-    ts = np.arange(T)
-    N = len(burst_ts)
-    rates = np.zeros((T, N))
-    for i in range(N):
-        for bt, pr, kw in zip(burst_ts[i], peak_rate[i], kernel_width[i]):
-            rates[:,i] += pr * np.exp(-(ts - bt)**2 / (2 * kw**2))
-    return rates
-
-def generate_discrete_aud(T, N, tsyl_start, tsyl_end, syl):
-    # The first dimension of syl, tsyl_start, and tsyl_end should be the same
-    rng = np.random.default_rng()
-    aud = np.zeros((T, N))
-    for i, (ts, te) in enumerate(zip(tsyl_start, tsyl_end)):
-        aud[max(0,int(np.round(ts))):min(T,int(np.round(te))),:] += syl[i]
-    return aud
 
 def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False):
     if c < 1:
@@ -128,7 +110,12 @@ def lognormal_gen(rng, mean, std):
 
 def const_gen(rng, val, _=None):
     return lambda size: np.zeros(size) + val
-    
+
+def normalize(sig, axis):
+    m = sig.mean(axis=axis, keepdims=True)
+    s = sig.std(axis=axis, keepdims=True)
+    return (sig - m) / s
+
 def correlation(sig1, sig2, dim=2): 
     ''' 
     sig1: (T1, T2, ..., Tk, N)
@@ -137,8 +124,8 @@ def correlation(sig1, sig2, dim=2):
         If 2, calculate corr(sig1[t], sig2[p]) and return (T, P)
         If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk)
     '''
-    sig1 = (sig1 - sig1.mean(axis=-1, keepdims=True)) / sig1.std(axis=-1, keepdims=True)
-    sig2 = (sig2 - sig2.mean(axis=-1, keepdims=True)) / sig2.std(axis=-1, keepdims=True)
+    sig1 = normalize(sig1, -1)
+    sig2 = normalize(sig2, -1)
     if dim == 1:
         corr = (sig1 * sig2).mean(axis=-1)
     elif dim == 2:

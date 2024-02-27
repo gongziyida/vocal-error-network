@@ -32,3 +32,18 @@ def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
     ax[2].set(ylabel='Mean exc. rate')
     ax[-1].set(xlabel='Time (a.u.)')
     return fig, ax
+
+def plot_train_converge(Ws, W_syl_corrs, save_W_ts, rE, r_target):
+    fig, ax = plt.subplots(3, sharex='all', figsize=(4, 4.5))
+    dW = [np.abs(Ws[i]-Ws[i-1]).mean(axis=0) for i in range(1,len(Ws))]
+    ax[0].plot(save_W_ts, dW)
+    dcorr = [np.abs(W_syl_corrs[i]-W_syl_corrs[i-1]).mean(axis=0) 
+             for i in range(1,len(W_syl_corrs))]
+    ax[1].plot(save_W_ts, dcorr, 
+               label=['syl. %d' % (i+1) for i in range(len(dcorr[0]))])
+    ax[1].legend(ncols=2)
+    ax[2].plot(np.abs(rE - r_target).mean(axis=1))
+    ax[0].set(ylabel=r'$\left\langle |\Delta W_{ij}|\right\rangle_i$', yscale='log')
+    ax[1].set(ylabel='weight corr.\nabs. change', yscale='log')
+    ax[2].set(ylabel=r'$\left\langle |r^E - r^E_0| \right\rangle$', yscale='log')
+    return fig, ax
