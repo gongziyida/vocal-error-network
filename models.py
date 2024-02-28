@@ -93,23 +93,23 @@ class EINet(WCNet):
 
 #### Helpful functions ####
 
-def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False):
+def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False, **kwargs):
     if c < 1:
         M = srandom(dim1, dim2, c, 'csc')
         M.data[:] = rand_gen(size=len(M.data))
         if not sparse:
             M = M.toarray()
     else:
-        M = rand_gen(size=(dim1, dim2))
+        M = rand_gen(**kwargs, size=(dim1, dim2))
     return M
     
-def lognormal_gen(rng, mean, std):
+def lognormal_gen(rng, mean, std, size):
     mean_norm = np.log(mean**2 / np.sqrt(mean**2 + std**2))
-    std_norm = np.log(1 + std**2 / mean**2)
-    return lambda size: rng.lognormal(mean_norm, std_norm, size=size)
+    std_norm = np.sqrt(np.log(1 + std**2 / mean**2))
+    return rng.lognormal(mean_norm, std_norm, size=size)
 
-def const_gen(rng, val, _=None):
-    return lambda size: np.zeros(size) + val
+def const_gen(val, size):
+    return np.zeros(size) + val
 
 def normalize(sig, axis):
     m = sig.mean(axis=axis, keepdims=True)
