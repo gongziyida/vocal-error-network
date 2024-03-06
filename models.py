@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import norm
 from scipy.sparse import random as srandom
+from scipy.sparse import issparse
+from tqdm import tqdm
 
 # E: Eiv; H: HVC; I: local inhibitory interneuron
 class WCNet: # Wilson-Cowan
@@ -19,9 +21,10 @@ class WCNet: # Wilson-Cowan
         else:
             self.W = srandom(NE, NH, cW, 'csc', data_rvs=rv.rvs)
             self.W.data = np.abs(self.W.data)
-            
-        if np.all(JEI == 0): # np.all for compatibility (see EINet)
-            print('Not a recurrent model and rI will not be calculated.')
+
+        if not issparse(JEI):
+            if np.all(JEI == 0): # np.all for compatibility (see EINet)
+                print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
     def sim(self, rE0, rH, aud, save_W_ts, T, dt, noise_strength, 
@@ -35,7 +38,7 @@ class WCNet: # Wilson-Cowan
         Ws = [self.W.copy()]
         mean_HVC_input = np.zeros(T)
 
-        for t in range(1, T):
+        for t in tqdm(range(1, T)):
             aux = (self.W - self.w_inh) @ rH[t-1]
             mean_HVC_input[t-1] = aux.mean()
             noise = rng.normal(0, noise_strength, size=self.NE)
@@ -72,8 +75,8 @@ class EINet(WCNet):
         Ws = [self.W.copy()]
         mean_HVC_input = np.zeros(T)
 
-        for t in range(1, T):
-            aux = (self.W - self.w_inh) @ rH[t-1]
+        for t in tqdm(range(1, T)):
+            aux = self.W @ rH[t-1] - self.w_inh * rH[t-1].sum()
             mean_HVC_input[t-1] = aux.mean()
             noiseE = rng.normal(0, noise_strength, size=self.NE)
             noiseI = rng.normal(0, noise_strength, size=self.NI)
@@ -96,7 +99,7 @@ class EINet(WCNet):
 def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False, **kwargs):
     if c < 1:
         M = srandom(dim1, dim2, c, 'csc')
-        M.data[:] = rand_gen(size=len(M.data))
+        M.data[:] = rand_gen(**kwargs, size=len(M.data))
         if not sparse:
             M = M.toarray()
     else:
@@ -132,3 +135,18 @@ def correlation(sig1, sig2, dim=2):
         corr = sig1 @ sig2.T / sig1.shape[-1]
     assert np.nanmax(np.abs(corr)) < 1 + 1e-5
     return corr
+    
+def temporal_sort(r, t0=0):
+    # Negative or positive peaks
+    when_ri_peak = np.argmax(np.abs(r[t0:]), axis=0)
+    r_max = np.array([r[t0+t,i] for i, t in enumerate(when_ri_peak)])
+    mask_pos, mask_neg = r_max > 0, r_max < 0
+    n_pos, n_neg = mask_pos.sum(), mask_neg.sum()
+    print(n_pos, n_neg)
+    r_ret = np.zeros((r.shape[0], n_pos+n_neg))
+    idx_pos = np.argsort(when_ri_peak[mask_pos])
+    idx_neg = np.argsort(when_ri_peak[mask_neg])
+    idx_all = np.hstack([np.where(mask_pos)[0][idx_pos], 
+                         np.where(mask_neg)[0][idx_neg]])
+    r_ret = r[:,idx_all]
+    return r_ret, idx_all
