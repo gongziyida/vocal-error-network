@@ -136,11 +136,23 @@ def correlation(sig1, sig2, dim=2):
     assert np.nanmax(np.abs(corr)) < 1 + 1e-5
     return corr
     
-def temporal_sort(r, t0=0):
+def temporal_sort(r, by, t0=0):
+    '''
+    by: how to separate the positively and negatively modulated neurons
+        can be `dmean` (change in the mean rates after t0)
+        or `rmax` (sign of the peak firing rates after t0)
+    t0: the start time of the stimulus
+    '''
     # Negative or positive peaks
     when_ri_peak = np.argmax(np.abs(r[t0:]), axis=0)
-    r_max = np.array([r[t0+t,i] for i, t in enumerate(when_ri_peak)])
-    mask_pos, mask_neg = r_max > 0, r_max < 0
+    if by == 'dmean':
+        drmean = r[t0:].mean(axis=0) - r[:t0].mean(axis=0)
+        mask_pos, mask_neg = drmean > 0, drmean < 0
+    elif by == 'rmax':
+        r_max = np.array([r[t0+t,i] for i, t in enumerate(when_ri_peak)])
+        mask_pos, mask_neg = r_max > 0, r_max < 0
+    else:
+        raise NotImplementedError
     n_pos, n_neg = mask_pos.sum(), mask_neg.sum()
     print(n_pos, n_neg)
     r_ret = np.zeros((r.shape[0], n_pos+n_neg))
