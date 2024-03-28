@@ -4,6 +4,8 @@ from models import *
 from matplotlib.colors import TwoSlopeNorm
 
 def plot_wcol_corr(W_syl_corrs, figdim, figsize):
+    ''' Plot the correlation between columns of W and syllabi
+    '''
     N_HVC, N_syl = W_syl_corrs[0].shape
     xticks = np.arange(N_syl)
     xticklabels = list(map(chr, range(65, 65+N_syl))) # 65 is A and 97 is a
@@ -25,6 +27,8 @@ def plot_wcol_corr(W_syl_corrs, figdim, figsize):
     return fig, ax
 
 def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
+    ''' Plot some training stats
+    '''
     W_norms = np.array([np.linalg.norm(_, ord='fro') for _ in Ws]) # Frobenius norm
     n = 3 if rI is None else 4
     fig, ax = plt.subplots(n, sharex='all', figsize=(4, n*1.5))
@@ -41,6 +45,8 @@ def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
     return fig, ax
 
 def plot_train_converge(Ws, W_syl_corrs, save_W_ts, rE, r_target):
+    ''' Plot some convergence stats
+    '''
     fig, ax = plt.subplots(3, sharex='all', figsize=(4, 4.5))
     dW = [np.abs(Ws[i]-Ws[i-1]).mean(axis=0) for i in range(1,len(Ws))]
     ax[0].plot(save_W_ts, dW)
@@ -55,24 +61,79 @@ def plot_train_converge(Ws, W_syl_corrs, save_W_ts, rE, r_target):
     ax[2].set(ylabel=r'$\left\langle |r^E - r^E_0| \right\rangle$', yscale='log')
     return fig, ax
 
+def plot_example_colW_syl(Ws, syl, i, rend_id):
+    ''' visualize columns of W and sylabus patterns
+    i: i-th HVC
+    rend_id: indices of Ws to plot
+    '''
+    idx = np.argsort(syl)[::-1]
+    
+    fig, ax = plt.subplots(1, len(rend_id)+1, sharex='all', sharey='all',
+                           figsize=(0.8*(len(rend_id)+1), 2))
+    ax[0].imshow(syl[idx][:,None], aspect='auto', cmap='seismic')
+    ax[0].set(xticks=[], yticks=[0, len(Ws[0])-1], yticklabels=[1, len(Ws[0])], 
+              ylabel='E neuron index\n(sorted)')
+    ax[0].set_title('Syl. A', fontsize=10)
+    fig.text(0.45, 1, 'Input weights from\nHVC neuron %d' % (i + 1), 
+             fontsize=10, ha='left', va='top')
+    for j, r in enumerate(rend_id):
+        ax[j+1].imshow(Ws[r][idx,i:i+1], aspect='auto', cmap='seismic')
+        ax[j+1].set_xlabel('Rend.' + str(r), fontsize=10)
+    fig.tight_layout()
+    return fig, ax
+    
+def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, tpre=100):
+    ''' visualize sylabus patterns and ctrl responses, and errors and error responses
+    '''
+    ti, tj = int(t_start - tpre), int(t_end)
+    fig, ax = plt.subplots(2, 2, figsize=(2, 4), sharex='col', sharey='all', 
+                           width_ratios=[1, 5])
+
+    N = ctrl[0].shape[1]
+    z1, z2 = normalize(ctrl[0][ti:tj], axis=0), normalize(err_trial[0][ti:tj], axis=0)
+    zmin = max(min(list(map(lambda _: _[0].min(), [z1, z2]))), -5)
+    zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), 5)
+    idx_s, idx_ds = np.argsort(syl)[::-1], np.argsort(dsyl)[::-1]
+
+    ax[0,0].imshow(syl[idx_s][:,None], aspect='auto', cmap='seismic')
+    ax[0,1].imshow(z1[:,idx_s].T, aspect='auto', cmap='seismic', 
+                   interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
+    ax[1,0].imshow(dsyl[idx_ds][:,None], aspect='auto', cmap='seismic')
+    ax[1,1].imshow(z2[:,idx_ds].T, aspect='auto', cmap='seismic', 
+                   interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
+    ax[0,1].axvline(100, ls='--', c='k', lw=2)
+    ax[1,1].axvline(100, ls='--', c='k', lw=2)
+    ax[0,0].set(xticks=[], yticks=[0, N-1], yticklabels=[1, N], 
+                ylabel='E neuron index\n(sorted)')
+    ax[1,0].set(xticks=[], yticks=[0, N-1], yticklabels=[1, N], 
+                ylabel='E neuron index\n(sorted)')
+    ax[1,1].set(xlabel='Time (a.u.)')
+    ax[0,0].set_title('Syl. A', fontsize=10)
+    ax[1,0].set_title('Err. A', fontsize=10)
+    ax[0,1].set_title('Response\n(ctrl)', fontsize=10)
+    ax[1,1].set_title('Response\n(error)', fontsize=10)
+    fig.tight_layout()
+    return fig, ax
 
 def plot_tests_mean(tests, test_names, ti, tj, plot_inh=True):
     fig, ax = plt.subplots(1, len(tests), sharey='row', sharex='all', 
                            figsize=(1.25*len(tests), 2))
     for i, (test, l) in enumerate(zip(tests, test_names)):
-        ax[i].plot(test[0][ti:tj].mean(axis=1)[:])
+        ax[i].plot(test[0][ti:tj].mean(axis=1)[:], label='E')
         if plot_inh:
             aux = test[1][ti:tj, ..., None]
-            ax[i].plot(aux.mean(axis=1)[:])
+            ax[i].plot(aux.mean(axis=1)[:], label='I')
         ax[i].set_title(l, fontsize=10)
         ax[i].set(xlabel='Time (a.u.)')
     ax[0].set(ylabel='Mean rate')
+    ax[0].legend(ncols=2, fontsize='small', frameon=True, 
+                 columnspacing=1.5, handlelength=1)
     fig.tight_layout()
     return fig, ax
 
 def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
                      syl_order=dict(), y=0.9):
-    '''
+    ''' Correlations with syls and errors over time
     tests: list of list containing the excitatory and inhibitory rates
     syl_tests: sylabi used for tests
     syl: control case
@@ -110,7 +171,7 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
     
 def plot_tests_raster(tests, test_names, ti, tj, T_burn, 
                       plot_inh=False, syl_order=dict()):
-    '''
+    ''' 
     syl_order: a dictionary {test_index: [(syl_index, t_start, t_end)...]}. 
         If given, plot horizontal bars indicate the onset of each syllabus.
     '''
@@ -128,15 +189,17 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
         zmin = max(min(list(map(lambda _: _[0].min(), zs))), -5)
         zmax = min(max(list(map(lambda _: _[0].max(), zs))), 5)
         idx = temporal_sort(zs[0], 'dmean', t0=T_burn-ti)[1]
+
+        norm = TwoSlopeNorm(0, zmin, zmax)
         
         for k, (z, l) in enumerate(zip(zs, test_names)):
             # Uncomment the below to sort case-by-case
             # idx = temporal_sort(z, t0=T_burn-i)[1]
             im = ax[p,k].imshow(z[:,idx].T, aspect='auto', cmap='seismic', 
-                                norm=TwoSlopeNorm(0, zmin, zmax))
+                                interpolation='none', norm=norm)
             cbar = fig.colorbar(im, cax=ax[p,-1])
             cbar.set_ticks([np.ceil(zmin), 0, np.floor(zmax)-1])
-            ax[p,k].axvline(T_burn-ti, ls='--', c='k')
+            ax[p,k].axvline(T_burn-ti, ls='--', c='k', lw=2)
             ax[0,k].set(xticks=[], yticks=[])
             ax[0,k].set_title(l, fontsize=10)
             ax[-1,k].set(xlabel='Time (a.u.)', yticks=[])
@@ -153,6 +216,8 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
     return fig, ax
     
 def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
+    ''' scatter plots showing the joint distributions of ctrl vs nonctrl
+    '''
     zs = [normalize(t[0][ti:tj].mean(axis=0), axis=0) for t in tests]
     fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.5*(len(zs)-1), 2), 
                            sharey='all')
@@ -166,6 +231,8 @@ def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     return fig, ax
     
 def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
+    ''' Correlations between time-avg ctrl and nonctrl over time
+    '''
     # zs = [normalize(t[0][ti:tj], axis=0) for t in tests]
     zs = [t[0][ti:tj] for t in tests]
     fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.5*(len(tests)-1), 2), 
@@ -182,6 +249,8 @@ def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
     return fig, ax
     
 def plot_rate_and_change_dists(tests, test_names, ti, tj):
+    ''' Histograms of rates and rate changes
+    '''
     ls = [t[0][ti:tj].mean(axis=0) for t in tests]
     changes = [l - ls[0] for l in ls]
     lmax = max(list(map(lambda _: _.max(), ls)))
@@ -193,6 +262,8 @@ def plot_rate_and_change_dists(tests, test_names, ti, tj):
         ax[i,0].hist(l, bins=15, range=(0, lmax), density=True, log=True)
         ax[i,0].set_ylabel(k, fontsize=10)
         ax[i,1].hist(c, bins=15, range=(cmin, cmax), density=True, log=True)
+        for j in (0, 1):
+            ax[i,j].set(yticks=[0.1, 1])
     ax[-1,0].set(xlabel='Response (Hz)')
     ax[-1,1].set(xlabel='Change (Hz)')
     fig.tight_layout()

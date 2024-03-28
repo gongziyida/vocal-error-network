@@ -68,6 +68,7 @@ class EINet(WCNet):
             plasticity=None, lr=0, **plasticity_args):
         rng = np.random.default_rng()
         rE = np.zeros((T, self.NE))
+        hE = np.zeros((T, self.NE))
         rI = np.zeros((T, self.NI))
         rE[0] = rE0
         rI[0] = rI0
@@ -80,18 +81,18 @@ class EINet(WCNet):
             mean_HVC_input[t-1] = aux.mean()
             noiseE = rng.normal(0, noise_strength, size=self.NE)
             noiseI = rng.normal(0, noise_strength, size=self.NI)
-            recE = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
+            hE[t-1] = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
             recI = self.JIE @ rE[t-1] - self.JII @ rI[t-1]
             dI = -rI[t-1] + self.phiI(recI + self.wI * rH[t-1].mean() + noiseI)
             rI[t] = rI[t-1] + dI * dt / self.tauI
-            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + recE + noiseE)
+            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + hE[t-1] + noiseE)
             rE[t] = rE[t-1] + drE * dt / self.tauE
             if lr != 0:
                 plasticity(self, rE[t], rH[t], lr, **plasticity_args)
             if t in save_W_ts:
                 Ws.append(self.W.copy())
         
-        return rE, rI, Ws, mean_HVC_input
+        return rE, rI, Ws, mean_HVC_input, hE
 
 
 #### Helpful functions ####
