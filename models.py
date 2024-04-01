@@ -106,6 +106,9 @@ def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False, **kwargs):
     else:
         M = rand_gen(**kwargs, size=(dim1, dim2))
     return M
+
+def normal_gen(rng, mean, std, size):
+    return rng.normal(mean, std, size=size).clip(min=0)
     
 def lognormal_gen(rng, mean, std, size):
     mean_norm = np.log(mean**2 / np.sqrt(mean**2 + std**2))

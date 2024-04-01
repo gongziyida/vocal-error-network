@@ -219,13 +219,14 @@ def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     ''' scatter plots showing the joint distributions of ctrl vs nonctrl
     '''
     zs = [normalize(t[0][ti:tj].mean(axis=0), axis=0) for t in tests]
-    fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.5*(len(zs)-1), 2), 
+    fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.4*(len(zs)-1), 2), 
                            sharey='all')
     for i, l in enumerate(test_names[1:]):
         ax[i].plot(zs[0], zs[i+1], 'o', ms=1)
         ax[i].plot([-2, 5], [-2, 5], c='k', ls='--')
         ax[i].set(xlabel=r'$z_{ctrl}$', xlim=[-3, 6], ylim=[-3, 6])
         ax[i].set_title(l, fontsize=10)
+        ax[i].axes.set_aspect('equal')
     ax[0].set(ylabel='z', yticks=[0, 5])
     fig.tight_layout()
     return fig, ax
