@@ -110,7 +110,7 @@ def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, tpre=10
     ax[1,1].set(xlabel='Time (a.u.)')
     ax[0,0].set_title('Syl. A', fontsize=10)
     ax[1,0].set_title('Err. A', fontsize=10)
-    ax[0,1].set_title('Response\n(ctrl)', fontsize=10)
+    ax[0,1].set_title('Response\n(Correct)', fontsize=10)
     ax[1,1].set_title('Response\n(error)', fontsize=10)
     fig.tight_layout()
     return fig, ax
@@ -224,7 +224,7 @@ def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     for i, l in enumerate(test_names[1:]):
         ax[i].plot(zs[0], zs[i+1], 'o', ms=1)
         ax[i].plot([-2, 5], [-2, 5], c='k', ls='--')
-        ax[i].set(xlabel=r'$z_{ctrl}$', xlim=[-3, 6], ylim=[-3, 6])
+        ax[i].set(xlabel=r'$z_{Correct}$', xlim=[-3, 6], ylim=[-3, 6])
         ax[i].set_title(l, fontsize=10)
         ax[i].axes.set_aspect('equal')
     ax[0].set(ylabel='z', yticks=[0, 5])
@@ -245,7 +245,7 @@ def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
         ax[i].hlines(corr[T_burn-ti:].mean(), T_burn-ti, tj-ti, color='r')
         ax[i].set_title(l, fontsize=10)
         ax[i].set(xlabel='Time (a.u.)')
-    ax[0].set(ylabel='Corr with Ctrl')
+    ax[0].set(ylabel='Corr. with \nSinging (Correct)')
     fig.tight_layout()
     return fig, ax
     
