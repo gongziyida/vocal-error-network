@@ -119,7 +119,7 @@ class EINetRecPlasticity(EINet): # Same as EI net, but with recurrent plasticity
             drE = -rE[t-1] + self.phiE(aux + aud[t-1] + hE[t-1] + noiseE)
             rE[t] = rE[t-1] + drE * dt / self.tauE
             if lr != 0:
-                plasticity(self, rE[t], rE[max(t-asyn,0)], aux, lr, **plasticity_args)
+                plasticity(self, rE[t], rE[max(t-asyn,0)], rH[t], lr, **plasticity_args)
             if t in save_W_ts:
                 Ws.append(self.JEE.copy())
         

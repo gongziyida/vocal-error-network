@@ -69,7 +69,7 @@ def plot_example_colW_syl(Ws, syl, i, rend_id):
     idx = np.argsort(syl)[::-1]
     
     fig, ax = plt.subplots(1, len(rend_id)+1, sharex='all', sharey='all',
-                           figsize=(0.8*(len(rend_id)+1), 2))
+                           figsize=(0.8*(len(rend_id)+1), 1.6))
     ax[0].imshow(syl[idx][:,None], aspect='auto', cmap='seismic')
     ax[0].set(xticks=[], yticks=[0, len(Ws[0])-1], yticklabels=[1, len(Ws[0])], 
               ylabel='E neuron index\n(sorted)')
@@ -81,13 +81,13 @@ def plot_example_colW_syl(Ws, syl, i, rend_id):
         ax[j+1].set_xlabel('Rend.' + str(r), fontsize=10)
     fig.tight_layout()
     return fig, ax
-    
-def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, tpre=100):
+
+
+def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, 
+                             tpre=100, figsize=(2, 3), plot_pattern=False):
     ''' visualize sylabus patterns and ctrl responses, and errors and error responses
     '''
     ti, tj = int(t_start - tpre), int(t_end)
-    fig, ax = plt.subplots(2, 2, figsize=(2, 4), sharex='col', sharey='all', 
-                           width_ratios=[1, 5])
 
     N = ctrl[0].shape[1]
     z1, z2 = normalize(ctrl[0][ti:tj], axis=0), normalize(err_trial[0][ti:tj], axis=0)
@@ -95,24 +95,30 @@ def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, tpre=10
     zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), 5)
     idx_s, idx_ds = np.argsort(syl)[::-1], np.argsort(dsyl)[::-1]
 
-    ax[0,0].imshow(syl[idx_s][:,None], aspect='auto', cmap='seismic')
-    ax[0,1].imshow(z1[:,idx_s].T, aspect='auto', cmap='seismic', 
-                   interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
-    ax[1,0].imshow(dsyl[idx_ds][:,None], aspect='auto', cmap='seismic')
-    ax[1,1].imshow(z2[:,idx_ds].T, aspect='auto', cmap='seismic', 
-                   interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
-    ax[0,1].axvline(100, ls='--', c='k', lw=2)
-    ax[1,1].axvline(100, ls='--', c='k', lw=2)
-    ax[0,0].set(xticks=[], yticks=[0, N-1], yticklabels=[1, N], 
-                ylabel='E neuron index\n(sorted)')
-    ax[1,0].set(xticks=[], yticks=[0, N-1], yticklabels=[1, N], 
-                ylabel='E neuron index\n(sorted)')
-    ax[1,1].set(xlabel='Time (a.u.)')
-    ax[0,0].set_title('Syl. A', fontsize=10)
-    ax[1,0].set_title('Err. A', fontsize=10)
-    ax[0,1].set_title('Response\n(Correct)', fontsize=10)
-    ax[1,1].set_title('Response\n(error)', fontsize=10)
-    fig.tight_layout()
+    if plot_pattern:
+        fig, ax = plt.subplots(2, 2, figsize=figsize, sharex='col', sharey='all', 
+                               width_ratios=[1, 3])
+        ax[0,0].imshow(syl[idx_s][:,None], aspect='auto', cmap='seismic')
+        ax[1,0].imshow(dsyl[idx_ds][:,None], aspect='auto', cmap='seismic')
+        ax[0,0].set_title('Syl. A', fontsize=10)
+        ax[1,0].set_title('Err. A', fontsize=10)
+        ax = ax.T.flatten()
+    else:
+        fig, ax = plt.subplots(2, figsize=figsize, sharex='col', sharey='all')
+        
+    ax[-2].imshow(z1[:,idx_s].T, aspect='auto', cmap='seismic', rasterized=True,
+                  interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
+    ax[-1].imshow(z2[:,idx_ds].T, aspect='auto', cmap='seismic', rasterized=True,
+                  interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
+    for i in (0, 1):
+        ax[i].set_yticks([0, N-1], [1, N], rotation=90)
+        ax[-1-i].axvline(tpre, ls='--', c='k', lw=2)
+    ax[0].set_ylabel('E neuron index\n(sorted by pattern)')
+    ax[1].set_ylabel('E neuron index\n(sorted by error)')
+    ax[-1].set(xlabel='Time (a.u.)', xticks=[tpre], xticklabels=['song onset'])
+    ax[-2].set_title('Correct', fontsize=10)
+    ax[-1].set_title('Perturbed', fontsize=10)
+    fig.tight_layout(pad=0.1)
     return fig, ax
 
 def plot_tests_mean(tests, test_names, ti, tj, plot_inh=True):
@@ -169,6 +175,40 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
     fig.tight_layout()
     return fig, ax
     
+def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
+                            syl_order=dict(), y=0.9):
+    ''' Correlations with syls and errors over time, see `plot_tests_corrs`
+    '''
+    cmap = plt.get_cmap('plasma')
+    n_unpert = len(tests) - len(tid_perturb_input)
+    fig, ax = plt.subplots(1, len(tests), sharex='all', figsize=(1.5*len(tests), 2))
+    p, q = 0, 0
+    for i, (test, syl_, l) in enumerate(zip(tests, syl_tests, test_names)):
+        if i in tid_perturb_input: # plot corr with error
+            axi, yl = p + n_unpert, 'corr. with error'
+            if syl_ is None: # deafen
+                syl_ = 0
+            corr = correlation(test[0][ti:tj], syl_ - syl, dim=2)
+            p += 1
+        else: # plot corr with syl pattern
+            axi, yl = q, 'corr. with syllable'
+            corr = correlation(test[0][ti:tj], syl, dim=2)
+            q += 1
+        
+        for j in range(corr.shape[1]):
+            ax[axi].plot(corr[:,j], c=cmap(j/corr.shape[1]))
+        ax[axi].set_title(l, fontsize=10)
+        ax[axi].set(yticks=[0, 1], ylim=[-0.5, 1.2], ylabel=yl, xlabel='Time')
+
+        v = syl_order.get(i)
+        if v is not None:
+            for (j, t0, t1) in v:
+                ax[axi].plot([t0, t1], [y, y], color=cmap(j/len(v)), lw=3)
+                ax[axi].text(t0, y - 0.1, chr(65+j), color=cmap(j/len(v)), va='top')
+
+    fig.tight_layout()
+    return fig, ax
+
 def plot_tests_raster(tests, test_names, ti, tj, T_burn, 
                       plot_inh=False, syl_order=dict()):
     ''' 
@@ -177,7 +217,7 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
     '''
     pop = ('E', 'I') if plot_inh else ('E',)
     fig, ax = plt.subplots(len(pop), len(tests)+1, 
-                           figsize=(1.25*len(tests), 2*len(pop)), 
+                           figsize=(1.25*len(tests), 1.6*len(pop)), 
                            width_ratios=[1]*len(tests)+[0.05])
     if not plot_inh:
         ax = ax[None,:]
@@ -196,7 +236,7 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
             # Uncomment the below to sort case-by-case
             # idx = temporal_sort(z, t0=T_burn-i)[1]
             im = ax[p,k].imshow(z[:,idx].T, aspect='auto', cmap='seismic', 
-                                interpolation='none', norm=norm)
+                                interpolation='none', norm=norm, rasterized=True)
             cbar = fig.colorbar(im, cax=ax[p,-1])
             cbar.set_ticks([np.ceil(zmin), 0, np.floor(zmax)-1])
             ax[p,k].axvline(T_burn-ti, ls='--', c='k', lw=2)
@@ -204,7 +244,7 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
             ax[0,k].set_title(l, fontsize=10)
             ax[-1,k].set(xlabel='Time (a.u.)', yticks=[])
         N = zs[0].shape[1]
-        ax[p,0].set(ylabel=pop[p], yticks=[N//2, N])
+        ax[p,0].set(ylabel=pop[p], yticks=[])#, yticks=[N//2, N])
     
     cmap = plt.get_cmap('plasma')
     N = tests[0][0].shape[1]
@@ -249,16 +289,19 @@ def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
     fig.tight_layout()
     return fig, ax
     
-def plot_rate_and_change_dists(tests, test_names, ti, tj):
+def plot_rate_and_change_dists(tests, test_names, ctrl, ti, tj):
     ''' Histograms of rates and rate changes
     '''
     ls = [t[0][ti:tj].mean(axis=0) for t in tests]
-    changes = [l - ls[0] for l in ls]
+    ctrl_mean = ctrl[0][ti:tj].mean(axis=0)
+    changes = [l - ctrl_mean for l in ls]
     lmax = max(list(map(lambda _: _.max(), ls)))
     cmax = max(list(map(lambda _: _.max(), changes)))
     cmin = min(list(map(lambda _: _.min(), changes)))
     fig, ax = plt.subplots(len(ls), 2, figsize=(3, 1.2*len(tests)), 
                            sharex='col')
+    if len(ls) == 1:
+        ax = ax[None,:]
     for i, (l, c, k) in enumerate(zip(ls, changes, test_names)):
         ax[i,0].hist(l, bins=15, range=(0, lmax), density=True, log=True)
         ax[i,0].set_ylabel(k, fontsize=10)

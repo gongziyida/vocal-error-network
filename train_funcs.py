@@ -48,3 +48,70 @@ def generate_discrete_aud(T, N, tsyl_start, tsyl_end, syl):
     for i, (ts, te) in enumerate(zip(tsyl_start, tsyl_end)):
         aud[max(0,int(np.round(ts))):min(T,int(np.round(te))),:] += syl[i]
     return aud
+    
+class Experiment:
+    AUD_LIST = ('correct', 'shuf_syl_idx', 'perturb', 'off')
+    
+    def __init__(self, net, rH, syl, noise, 
+                 T_test, t_start, t_end, dt=1):
+        ''' 
+        noise: background noise std
+        t_start, t_end: start and end of singing/playback; must be iterable
+                        outside of that time range is just noise
+        '''
+        self.net, self.rH = net, rH[:T_test]
+        self.syl, self.noise, self.T_test = syl, noise, T_test
+        self.dt, self.t_start, self.t_end = dt, t_start, t_end
+        self.rH_null = np.zeros_like(self.rH) # For non-singing exp
+    
+    def sim(self, aud, sing=True, pert_args=None):
+        ''' pert_args: if 2-tuple, (pert pattern, weight of syl)
+                       if 3-tuple, (mean, cov, weight of syl)
+        '''
+        NE = self.net.NE # For convenience
+
+        idx_si = np.arange(self.syl.shape[0])
+        
+        if aud == 'correct':
+            syl = self.syl
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+            
+        elif aud == 'shuf_syl_idx':
+            rng.shuffle(idx_si, axis=0)
+            while (idx_si == np.arange(len(idx_si))).any():
+                rng.shuffle(idx_si, axis=0)
+            syl = self.syl[idx_si]
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+            
+        elif aud == 'perturb':
+            if len(pert_args) == 2:
+                pert = pert_args[0]
+            elif len(pert_args) == 3:
+                pert = rng.multivariate_normal(pert_args[0], pert_args[1], 
+                                               size=self.syl.shape[0])
+            else:
+                raise NotImplementedError
+            syl = self.syl * pert_args[-1] + pert
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+
+        elif aud == 'off':
+            syl = np.zeros_like(self.syl)
+            aud = np.zeros((self.T_test, NE))
+
+        rH = self.rH if sing else np.zeros_like(self.rH)
+        
+        rE0 = rng.normal(loc=1, scale=0.5, size=NE).clip(min=0)
+        if hasattr(self.net, 'NI'):
+            rI0 = rng.normal(loc=5, scale=0.5, size=self.net.NI).clip(min=0)
+            res = self.net.sim(rE0, rI0, rH, aud, [], self.T_test, self.dt, self.noise)[:2]
+        else: # Scalar
+            res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5)[:2]
+
+        return res, syl, idx_si
+
+    def sim_multi(self, aud_list, sing_list, pert_args_list):
+        reses, syls, idxs = [], [], []
+        for aud, sing, pert_args in zip(aud_list, sing_list, pert_args_list):
+            res, syl, idx = self.sim(aud, sing, pert_args)
+            reses.append(res), syls.append(syl), idxs.append(idx)
+        return reses, syls, idxs
