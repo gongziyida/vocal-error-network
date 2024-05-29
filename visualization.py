@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from models import *
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, Normalize
 
 def plot_wcol_corr(W_syl_corrs, figdim, figsize):
     ''' Plot the correlation between columns of W and syllabi
@@ -262,8 +262,8 @@ def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.4*(len(zs)-1), 2), 
                            sharey='all')
     for i, l in enumerate(test_names[1:]):
-        ax[i].plot(zs[0], zs[i+1], 'o', ms=1)
-        ax[i].plot([-2, 5], [-2, 5], c='k', ls='--')
+        ax[i].plot(zs[0], zs[i+1], 'o', ms=1, color='k')
+        ax[i].plot([-2, 5], [-2, 5], c='r', ls='--')
         ax[i].set(xlabel=r'$z_{Correct}$', xlim=[-3, 6], ylim=[-3, 6])
         ax[i].set_title(l, fontsize=10)
         ax[i].axes.set_aspect('equal')
