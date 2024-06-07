@@ -82,52 +82,58 @@ def plot_example_colW_syl(Ws, syl, i, rend_id):
     fig.tight_layout()
     return fig, ax
 
-
-def plot_raster_cmp_syl_dsyl(ctrl, err_trial, syl, dsyl, t_start, t_end, 
-                             tpre=100, figsize=(2, 3), plot_pattern=False):
+def plot_raster_cmp_syl_dsyl(rE_ctrl, rE_err, syl, dsyl, t_start, t_end, 
+                             plot_z=False, sort_by=('p', 'e'), th=5,
+                             tpre=100, figsize=(2, 3)):
     ''' visualize sylabus patterns and ctrl responses, and errors and error responses
+    sort_by: 'p' => pattern, or 'e' => error
     '''
     ti, tj = int(t_start - tpre), int(t_end)
 
-    N = ctrl[0].shape[1]
-    z1, z2 = normalize(ctrl[0][ti:tj], axis=0), normalize(err_trial[0][ti:tj], axis=0)
-    zmin = max(min(list(map(lambda _: _[0].min(), [z1, z2]))), -5)
-    zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), 5)
+    N = rE_ctrl.shape[1]
+    if plot_z:
+        z1 = normalize(rE_ctrl[ti:tj], axis=0)
+        z2 = normalize(rE_err[ti:tj], axis=0)
+        zmin = max(min(list(map(lambda _: _[0].min(), [z1, z2]))), -5)
+        zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), 5)
+        norm = TwoSlopeNorm(0, zmin, zmax)
+    else:
+        z1, z2 = rE_ctrl[ti:tj], rE_err[ti:tj]
+        zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), th)
+        norm = Normalize(0, zmax)
+        # norm = LogNorm(0.5, zmax)
     idx_s, idx_ds = np.argsort(syl)[::-1], np.argsort(dsyl)[::-1]
 
-    if plot_pattern:
-        fig, ax = plt.subplots(2, 2, figsize=figsize, sharex='col', sharey='all', 
-                               width_ratios=[1, 3])
-        ax[0,0].imshow(syl[idx_s][:,None], aspect='auto', cmap='seismic')
-        ax[1,0].imshow(dsyl[idx_ds][:,None], aspect='auto', cmap='seismic')
-        ax[0,0].set_title('Syl. A', fontsize=10)
-        ax[1,0].set_title('Err. A', fontsize=10)
-        ax = ax.T.flatten()
-    else:
-        fig, ax = plt.subplots(2, figsize=figsize, sharex='col', sharey='all')
-        
-    ax[-2].imshow(z1[:,idx_s].T, aspect='auto', cmap='seismic', rasterized=True,
-                  interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
-    ax[-1].imshow(z2[:,idx_ds].T, aspect='auto', cmap='seismic', rasterized=True,
-                  interpolation='none', norm=TwoSlopeNorm(0, zmin, zmax))
+    fig, ax = plt.subplots(1, 3, figsize=figsize, width_ratios=(1, 1, 0.1))
+
+    idx1 = idx_s if sort_by[0]=='p' else idx_ds
+    idx2 = idx_s if sort_by[1]=='p' else idx_ds
+    ax[0].imshow(z1[:,idx1].T, aspect='auto', cmap='hot', rasterized=True,
+                  interpolation='antialiased', norm=norm)
+    im = ax[1].imshow(z2[:,idx2].T, aspect='auto', cmap='hot', rasterized=True,
+                      interpolation='antialiased', norm=norm)
+    
     for i in (0, 1):
-        ax[i].set_yticks([0, N-1], [1, N], rotation=90)
-        ax[-1-i].axvline(tpre, ls='--', c='k', lw=2)
-    ax[0].set_ylabel('E neuron index\n(sorted by pattern)')
-    ax[1].set_ylabel('E neuron index\n(sorted by error)')
-    ax[-1].set(xlabel='Time (a.u.)', xticks=[tpre], xticklabels=['song onset'])
-    ax[-2].set_title('Correct', fontsize=10)
-    ax[-1].set_title('Perturbed', fontsize=10)
-    fig.tight_layout(pad=0.1)
+        ax[i].axvline(tpre, ls='--', c='k', lw=2)
+        ax[i].set(yticks=[], xlabel='Time (a.u.)', 
+                  xticks=[tpre], xticklabels=['song onset'])
+    ax[0].set_yticks([0, N-1], [1, N], rotation=90)
+    ax[0].set_ylabel('E neuron index\n(sorted by error)')
+    ax[0].set_title('Singing\ncorrect', fontsize=10)
+    ax[1].set_title('Singing\nperturb', fontsize=10)
+    fig.colorbar(im, cax=ax[2])
+    ax[2].set(yticks=[0, th//2, th], yticklabels=[0, th//2, '≥%d' % th])
+    ax[2].set_title('Hz', ha='left', fontsize=10)
+    fig.tight_layout(pad=0.5)
     return fig, ax
 
-def plot_tests_mean(tests, test_names, ti, tj, plot_inh=True):
-    fig, ax = plt.subplots(1, len(tests), sharey='row', sharex='all', 
-                           figsize=(1.25*len(tests), 2))
-    for i, (test, l) in enumerate(zip(tests, test_names)):
-        ax[i].plot(test[0][ti:tj].mean(axis=1)[:], label='E')
+def plot_tests_mean(rEs, rIs, test_names, ti, tj, plot_inh=True):
+    fig, ax = plt.subplots(1, len(rEs), sharey='row', sharex='all', 
+                           figsize=(1.25*len(test_names), 2))
+    for i, (rE, rI, l) in enumerate(zip(rEs, rIs, test_names)):
+        ax[i].plot(rE[ti:tj].mean(axis=1)[:], label='E')
         if plot_inh:
-            aux = test[1][ti:tj, ..., None]
+            aux = rI[ti:tj, ..., None] # For compatibility with Wilson-Cowan model
             ax[i].plot(aux.mean(axis=1)[:], label='I')
         ax[i].set_title(l, fontsize=10)
         ax[i].set(xlabel='Time (a.u.)')
@@ -140,7 +146,7 @@ def plot_tests_mean(tests, test_names, ti, tj, plot_inh=True):
 def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
                      syl_order=dict(), y=0.9):
     ''' Correlations with syls and errors over time
-    tests: list of list containing the excitatory and inhibitory rates
+    tests: list containing the excitatory rates
     syl_tests: sylabi used for tests
     syl: control case
     ti, tj: the start and end time to plot
@@ -153,7 +159,7 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
     fig, ax = plt.subplots(2, len(tests), sharey='row', sharex='all', 
                            figsize=(1.25*len(tests), 3))
     for i, (test, syl_, l) in enumerate(zip(tests, syl_tests, test_names)):
-        corr = correlation(test[0][ti:tj], syl, dim=2)
+        corr = correlation(test[ti:tj], syl, dim=2)
         ax[0,i].set_title(l, fontsize=10)
         ax[-1,i].set(xlabel='Time (a.u.)')
         for j in range(corr.shape[1]):
@@ -161,7 +167,7 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
         if i in tid_perturb_input: # non-zero error; calc corr
             if syl_ is None: # deafen
                 syl_ = 0
-            corr = correlation(test[0][ti:tj], syl_ - syl, dim=2)
+            corr = correlation(test[ti:tj], syl_ - syl, dim=2)
             for j in range(corr.shape[1]):
                 ax[1,i].plot(corr[:,j], c=cmap(j/corr.shape[1]))
 
@@ -188,11 +194,11 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
             axi, yl = p + n_unpert, 'corr. with error'
             if syl_ is None: # deafen
                 syl_ = 0
-            corr = correlation(test[0][ti:tj], syl_ - syl, dim=2)
+            corr = correlation(test[ti:tj], syl_ - syl, dim=2)
             p += 1
         else: # plot corr with syl pattern
             axi, yl = q, 'corr. with syllable'
-            corr = correlation(test[0][ti:tj], syl, dim=2)
+            corr = correlation(test[ti:tj], syl, dim=2)
             q += 1
         
         for j in range(corr.shape[1]):
@@ -212,19 +218,21 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
 def plot_tests_raster(tests, test_names, ti, tj, T_burn, 
                       plot_inh=False, syl_order=dict()):
     ''' 
+    tests: (rEs, rIs) if plot_inh, else (rEs,)
     syl_order: a dictionary {test_index: [(syl_index, t_start, t_end)...]}. 
         If given, plot horizontal bars indicate the onset of each syllabus.
     '''
     pop = ('E', 'I') if plot_inh else ('E',)
-    fig, ax = plt.subplots(len(pop), len(tests)+1, 
-                           figsize=(1.25*len(tests), 1.6*len(pop)), 
-                           width_ratios=[1]*len(tests)+[0.05])
+    N, N_tests = tests['rE'][0].shape[1], len(tests['rE'])
+    fig, ax = plt.subplots(len(pop), N_tests+1, 
+                           figsize=(1.25*N_tests, 1.6*len(pop)), 
+                           width_ratios=[1]*N_tests+[0.05])
     if not plot_inh:
         ax = ax[None,:]
     for p in range(len(pop)):
         zs = []
-        for k, l in enumerate(tests):
-            zs.append(normalize(l[p][ti:tj], axis=0))
+        for k, l in enumerate(tests['r'+pop[p]]):
+            zs.append(normalize(l[ti:tj], axis=0))
 
         zmin = max(min(list(map(lambda _: _[0].min(), zs))), -5)
         zmax = min(max(list(map(lambda _: _[0].max(), zs))), 5)
@@ -247,7 +255,6 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
         ax[p,0].set(ylabel=pop[p], yticks=[])#, yticks=[N//2, N])
     
     cmap = plt.get_cmap('plasma')
-    N = tests[0][0].shape[1]
     for k, v in syl_order.items():
         for (i, t0, t1) in v:
             ax[0,k].add_patch(plt.Rectangle((t0, 0), t1-t0, -N/30, fc=cmap(i/len(v)), 
@@ -257,8 +264,9 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
     
 def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     ''' scatter plots showing the joint distributions of ctrl vs nonctrl
+    tests: list containing the excitatory rates
     '''
-    zs = [normalize(t[0][ti:tj].mean(axis=0), axis=0) for t in tests]
+    zs = [normalize(t[ti:tj].mean(axis=0), axis=0) for t in tests]
     fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.4*(len(zs)-1), 2), 
                            sharey='all')
     for i, l in enumerate(test_names[1:]):
@@ -273,9 +281,10 @@ def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
     
 def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
     ''' Correlations between time-avg ctrl and nonctrl over time
+    tests: list containing the excitatory rates
     '''
     # zs = [normalize(t[0][ti:tj], axis=0) for t in tests]
-    zs = [t[0][ti:tj] for t in tests]
+    zs = [t[ti:tj] for t in tests]
     fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.5*(len(tests)-1), 2), 
                            sharey='all')
     for i, l in enumerate(test_names[1:]):
@@ -289,16 +298,16 @@ def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
     fig.tight_layout()
     return fig, ax
     
-def plot_rate_and_change_dists(tests, test_names, ctrl, ti, tj):
+def plot_rate_and_change_dists(rEs, test_names, rE_ctrl, ti, tj):
     ''' Histograms of rates and rate changes
     '''
-    ls = [t[0][ti:tj].mean(axis=0) for t in tests]
-    ctrl_mean = ctrl[0][ti:tj].mean(axis=0)
-    changes = [l - ctrl_mean for l in ls]
+    ls = [rE[ti:tj].mean(axis=0) for rE in rEs]
+    rE_ctrl_mean = rE_ctrl[ti:tj].mean(axis=0)
+    changes = [l - rE_ctrl_mean for l in ls]
     lmax = max(list(map(lambda _: _.max(), ls)))
     cmax = max(list(map(lambda _: _.max(), changes)))
     cmin = min(list(map(lambda _: _.min(), changes)))
-    fig, ax = plt.subplots(len(ls), 2, figsize=(3, 1.2*len(tests)), 
+    fig, ax = plt.subplots(len(ls), 2, figsize=(3, 1.2*len(ls)), 
                            sharex='col')
     if len(ls) == 1:
         ax = ax[None,:]

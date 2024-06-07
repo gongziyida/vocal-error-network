@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import norm
 from scipy.sparse import random as srandom
-from scipy.sparse import issparse
+from scipy.sparse import issparse, find
 from tqdm import tqdm
 
 # E: Eiv; H: HVC; I: local inhibitory interneuron
@@ -22,7 +22,7 @@ class WCNet: # Wilson-Cowan
             self.W = srandom(NE, NH, cW, 'csc', data_rvs=rv.rvs)
             self.W.data = np.abs(self.W.data)
 
-        if not issparse(JEI):
+        if not issparse(JEI): # otherwise assume recurrent conn.
             if np.all(JEI == 0): # np.all for compatibility (see EINet)
                 print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
@@ -137,6 +137,34 @@ def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False, **kwargs):
         M = rand_gen(**kwargs, size=(dim1, dim2))
     return M
 
+def block_sym_mat(N, K, var, cov):
+    '''
+    N: matrix size
+    K: block size
+    '''
+    mat = np.zeros((N,N))
+    for i in range(N//K):
+        p, q = K*i, K*(i+1)
+        mat[p:q,p:q] = cov
+    if N % K > 0:
+        mat[N-N%K:N,N-N%K:N] = cov
+    mat[np.arange(N),np.arange(N)] = var
+    return mat
+
+def block_apply(vec, K, func):
+    '''
+    vec: Block-wise operation will be applied to the last dimension
+    K: block size
+    func: function to apply, must accept kwarg axis
+    '''
+    M, D = vec.shape[-1] // K, vec.shape[-1] % K
+    ret = []
+    for i in range(M):
+        ret.append(func(vec[...,K*i:K*(i+1)], axis=-1))
+    if D > 0:
+        ret.append(func(vec[...,-D:], axis=-1))
+    return np.stack(ret, axis=-1)
+
 def normal_gen(rng, mean, std, size):
     return rng.normal(mean, std, size=size).clip(min=0)
     
@@ -159,7 +187,7 @@ def correlation(sig1, sig2, dim=2):
     sig2: (P, N) if dim == 2, or (T1, T2, ..., Tk, N) if dim == 1
     dim: int
         If 2, calculate corr(sig1[t], sig2[p]) and return (T, P)
-        If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk)
+        If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk) 
     '''
     sig1 = normalize(sig1, -1)
     sig2 = normalize(sig2, -1)

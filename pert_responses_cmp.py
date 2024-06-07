@@ -111,24 +111,24 @@ EIres = EIexp.sim_multi(['perturb']*len(Ks), [True]*len(Ks), pert_args)
 FFres = FFexp.sim_multi(['perturb']*len(Ks), [True]*len(Ks), pert_args)
 
 for i in range(len(Ks)):
-    assert np.all(EIres[1][i] == FFres[1][i])
+    assert np.all(EIres['bos'][i] == FFres['bos'][i])
 
 EIcorrs, FFcorrs = [], []
 for i, K in enumerate(Ks):
-    EIcorrs.append(correlation(EIres[0][i][0], EIres[1][i] - syl, dim=2))
-    FFcorrs.append(correlation(FFres[0][i][0], FFres[1][i] - syl, dim=2))
+    EIcorrs.append(correlation(EIres['rE'][i], EIres['bos'][i] - syl, dim=2))
+    FFcorrs.append(correlation(FFres['rE'][i], FFres['bos'][i] - syl, dim=2))
     
 EIzs, FFzs = [], []
 for i, K in enumerate(Ks):
-    zEI, zFF = normalize(EIres[0][i][0], axis=1), normalize(FFres[0][i][0], axis=1)
+    zEI, zFF = normalize(EIres['rE'][i], axis=1), normalize(FFres['rE'][i], axis=1)
     EIzs.append((zEI[T_burn:,:K].mean(), zEI[T_burn:,K:].mean()))
     FFzs.append((zFF[T_burn:,:K].mean(), zFF[T_burn:,K:].mean()))
     
 EIsparsity, FFsparsity = dict(), dict()
 for th in (1, 2, 3):
-    EIsparsity[th] = np.vstack(list(map(lambda x: (x[0][T_burn:] > th).mean(axis=1), EIres[0])))
-    FFsparsity[th] = np.vstack(list(map(lambda x: (x[0][T_burn:] > th).mean(axis=1), FFres[0])))
+    EIsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), EIres['rE'])))
+    FFsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), FFres['rE'])))
 
 with open('results/pert_cmp_%s.pkl' % sys.argv[1], 'wb') as f:
     pickle.dump((EIcorrs, FFcorrs, EIzs, FFzs, EIsparsity, FFsparsity), f)
-    # pickle.dump(([_[0] for _ in EIres[0]], [_[0] for _ in FFres[0]], EIres[1], syl), f)
+    # pickle.dump(([_ for _ in EIres['rE']], [_ for _ in FFres['rE']], EIres['bos'], syl), f)

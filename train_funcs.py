@@ -65,23 +65,23 @@ class Experiment:
         self.rH_null = np.zeros_like(self.rH) # For non-singing exp
     
     def sim(self, aud, sing=True, pert_args=None):
-        ''' pert_args: if 2-tuple, (pert pattern, weight of syl)
-                       if 3-tuple, (mean, cov, weight of syl)
+        ''' pert_args: if 2-tuple, (pert pattern, weight of tutor song patterns)
+                       if 3-tuple, (mean, cov, weight of tutor song patterns)
         '''
         NE = self.net.NE # For convenience
 
         idx_si = np.arange(self.syl.shape[0])
         
         if aud == 'correct':
-            syl = self.syl
-            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+            bos = self.syl
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, bos)
             
         elif aud == 'shuf_syl_idx':
             rng.shuffle(idx_si, axis=0)
             while (idx_si == np.arange(len(idx_si))).any():
                 rng.shuffle(idx_si, axis=0)
-            syl = self.syl[idx_si]
-            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+            bos = self.syl.copy()[idx_si]
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, bos)
             
         elif aud == 'perturb':
             if len(pert_args) == 2:
@@ -91,11 +91,11 @@ class Experiment:
                                                size=self.syl.shape[0])
             else:
                 raise NotImplementedError
-            syl = self.syl * pert_args[-1] + pert
-            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, syl)
+            bos = self.syl * pert_args[-1] + pert
+            aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, bos)
 
         elif aud == 'off':
-            syl = np.zeros_like(self.syl)
+            bos = np.zeros_like(self.syl)
             aud = np.zeros((self.T_test, NE))
 
         rH = self.rH if sing else np.zeros_like(self.rH)
@@ -107,11 +107,11 @@ class Experiment:
         else: # Scalar
             res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5)[:2]
 
-        return res, syl, idx_si
+        return res[0], res[1], bos, idx_si
 
     def sim_multi(self, aud_list, sing_list, pert_args_list):
-        reses, syls, idxs = [], [], []
+        rEs, rIs, boses, idxs = [], [], [], []
         for aud, sing, pert_args in zip(aud_list, sing_list, pert_args_list):
-            res, syl, idx = self.sim(aud, sing, pert_args)
-            reses.append(res), syls.append(syl), idxs.append(idx)
-        return reses, syls, idxs
+            rE, rI, bos, idx = self.sim(aud, sing, pert_args)
+            rEs.append(rE), rIs.append(rI), boses.append(bos), idxs.append(idx)
+        return dict(rE=rEs, rI=rIs, bos=boses, shuff_idx=idxs)
