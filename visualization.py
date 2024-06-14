@@ -204,7 +204,7 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
         for j in range(corr.shape[1]):
             ax[axi].plot(corr[:,j], c=cmap(j/corr.shape[1]))
         ax[axi].set_title(l, fontsize=10)
-        ax[axi].set(yticks=[0, 1], ylim=[-0.5, 1.2], ylabel=yl, xlabel='Time')
+        ax[axi].set(yticks=[0, 1], ylim=[-0.5, y+0.1], ylabel=yl, xlabel='Time')
 
         v = syl_order.get(i)
         if v is not None:

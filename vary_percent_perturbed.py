@@ -21,12 +21,8 @@ T_burn = 500 # Burning
 T = T_burn + N_rend * T_rend # Total
 
 # Syllables and time stamps
-# syl = rng.normal(1, 3, size=(N_syl, NE))#.clip(min=0)
-syl_cov = np.zeros((NE,NE))
-K = 1
-for i in range(NE//K):
-    syl_cov[K*i:K*(i+1),K*i:K*(i+1)] = 2.5
-syl_cov[np.arange(NE),np.arange(NE)] = 3
+N_shared_channels = 5
+syl_cov = block_sym_mat(NE, K=N_shared_channels, var=9, cov=7.5)
 
 syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
 
@@ -52,14 +48,16 @@ tauE, tauI, dt = 40, 10, 1
 
 gen = lognormal_gen
 # gen = const_gen
-c = 1
-JEE0, JEI0, JIE0, JII0 = np.array([1, 0.8, 1.25, 0.85])
-sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.3
-# sEE *= 1.3
-JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE) / np.sqrt(NE)
-JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI) / np.sqrt(NI)
-JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE) / np.sqrt(NE)
-JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII) / np.sqrt(NI)
+c = 0.5
+JEE0, JEI0, JIE0, JII0 = np.array([1, 0.8, 1.2, 0.6]) / 3
+sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.25
+# c = 1
+# JEE0, JEI0, JIE0, JII0 = np.array([1, 0.8, 1.25, 0.9])
+# sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.25
+JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5) / np.sqrt(NE)
+JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
+JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
+JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
 
 rEmax, rImax, thE, thI, sE, sI = 40, 100, -5, 0, 2, 2
 phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
@@ -89,10 +87,10 @@ _ = FFnet.sim(rE0, rH, aud, [], T, dt, 1, bilin_hebb,
 
 
 #### Test models ####
-
-EIexp = Experiment(EInet, rH, syl, noise=1, T_test=T_burn+T_rend, 
+T_test = int(tsyl_end[-1,0]) # before T_burn + T_rend
+EIexp = Experiment(EInet, rH, syl, noise=1, T_test=T_test, 
                    t_start=tsyl_start[:,:1], t_end=tsyl_end[:,:1])
-FFexp = Experiment(FFnet, rH, syl, noise=1, T_test=T_burn+T_rend, 
+FFexp = Experiment(FFnet, rH, syl, noise=1, T_test=T_test, 
                    t_start=tsyl_start[:,:1], t_end=tsyl_end[:,:1])
 
 perts = []
@@ -100,7 +98,7 @@ Ks = np.array([5, 10, 50, 100, 200, 300])
 
 for K in Ks:
     pert_mean = np.zeros(NE)
-    pert_mean[:K] = 2
+    pert_mean[:K] = 5
     pert_cov = np.zeros((NE,NE))
     pert_cov[np.arange(NE),np.arange(NE)] = 1
     pert = rng.multivariate_normal(pert_mean, pert_cov, size=N_syl)
@@ -120,7 +118,8 @@ for i, K in enumerate(Ks):
     
 EIzs, FFzs = [], []
 for i, K in enumerate(Ks):
-    zEI, zFF = normalize(EIres['rE'][i], axis=1), normalize(FFres['rE'][i], axis=1)
+    # zEI, zFF = normalize(EIres['rE'][i], axis=1), normalize(FFres['rE'][i], axis=1)
+    zEI, zFF = EIres['rE'][i], FFres['rE'][i]
     EIzs.append((zEI[T_burn:,:K].mean(), zEI[T_burn:,K:].mean()))
     FFzs.append((zFF[T_burn:,:K].mean(), zFF[T_burn:,K:].mean()))
     
@@ -129,6 +128,5 @@ for th in (1, 2, 3):
     EIsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), EIres['rE'])))
     FFsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), FFres['rE'])))
 
-with open('results/pert_cmp_%s.pkl' % sys.argv[1], 'wb') as f:
+with open('results/vary_percent_pert_%s.pkl' % sys.argv[1], 'wb') as f:
     pickle.dump((EIcorrs, FFcorrs, EIzs, FFzs, EIsparsity, FFsparsity), f)
-    # pickle.dump(([_ for _ in EIres['rE']], [_ for _ in FFres['rE']], EIres['bos'], syl), f)

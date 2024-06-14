@@ -64,9 +64,10 @@ class Experiment:
         self.dt, self.t_start, self.t_end = dt, t_start, t_end
         self.rH_null = np.zeros_like(self.rH) # For non-singing exp
     
-    def sim(self, aud, sing=True, pert_args=None):
+    def sim(self, aud, sing=True, pert_args=None, shuff_idx=None):
         ''' pert_args: if 2-tuple, (pert pattern, weight of tutor song patterns)
                        if 3-tuple, (mean, cov, weight of tutor song patterns)
+            shuff_idx: list of syllable indices indicating the order of occurrence
         '''
         NE = self.net.NE # For convenience
 
@@ -77,9 +78,12 @@ class Experiment:
             aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, bos)
             
         elif aud == 'shuf_syl_idx':
-            rng.shuffle(idx_si, axis=0)
-            while (idx_si == np.arange(len(idx_si))).any():
+            if shuff_idx is None:
                 rng.shuffle(idx_si, axis=0)
+                while (idx_si == np.arange(len(idx_si))).any():
+                    rng.shuffle(idx_si, axis=0)
+            else:
+                idx_si = shuff_idx.copy()
             bos = self.syl.copy()[idx_si]
             aud = generate_discrete_aud(self.T_test, NE, self.t_start, self.t_end, bos)
             
@@ -109,9 +113,14 @@ class Experiment:
 
         return res[0], res[1], bos, idx_si
 
-    def sim_multi(self, aud_list, sing_list, pert_args_list):
+    def sim_multi(self, aud_list, sing_list, pert_args_list=None, shuff_idx_list=None):
+        if pert_args_list is None:
+            pert_args_list = [None] * len(aud_list)
+        if shuff_idx_list is None:
+            shuff_idx_list = [None] * len(aud_list)
         rEs, rIs, boses, idxs = [], [], [], []
-        for aud, sing, pert_args in zip(aud_list, sing_list, pert_args_list):
-            rE, rI, bos, idx = self.sim(aud, sing, pert_args)
+        iterator = zip(aud_list, sing_list, pert_args_list, shuff_idx_list)
+        for aud, sing, pert_args, shuff_idx in iterator:
+            rE, rI, bos, idx = self.sim(aud, sing, pert_args, shuff_idx)
             rEs.append(rE), rIs.append(rI), boses.append(bos), idxs.append(idx)
         return dict(rE=rEs, rI=rIs, bos=boses, shuff_idx=idxs)

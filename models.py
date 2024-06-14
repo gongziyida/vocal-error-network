@@ -186,7 +186,7 @@ def correlation(sig1, sig2, dim=2):
     sig1: (T1, T2, ..., Tk, N)
     sig2: (P, N) if dim == 2, or (T1, T2, ..., Tk, N) if dim == 1
     dim: int
-        If 2, calculate corr(sig1[t], sig2[p]) and return (T, P)
+        If 2, calculate corr(sig1[t], sig2[p]) and return (T1, T2, ..., Tk, P)
         If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk) 
     '''
     sig1 = normalize(sig1, -1)
