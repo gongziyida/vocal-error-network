@@ -11,14 +11,14 @@ preprocess_params = {
     'min_freq': 5e2, # minimum frequency
     'max_freq': 10e3, # maximum frequency
     'num_freq_bins': 50, # downsample using interpolation
-    'num_time_bins': 20,
+    'num_time_bins': 12,
     'nperseg': 256, # FFT
     'noverlap': 128, # FFT
-    'spec_min_val': 2.0, # minimum log-spectrogram value
+    'spec_min_val': 3.0, # minimum log-spectrogram value
     'spec_max_val': 6.5, # maximum log-spectrogram value
     'fs': 44100, # audio samplerate
     'mel': False, # frequency spacing, mel or linear
-    'time_stretch': True, # stretch short syllables?
+    'time_stretch': False, # stretch short syllables?
     'within_syll_normalize': False, # normalize spectrogram values on a
                                     # spectrogram-by-spectrogram basis
     'max_num_syllables': None, # maximum number of syllables per directory
