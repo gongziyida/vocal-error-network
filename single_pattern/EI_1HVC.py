@@ -2,9 +2,11 @@
 # coding: utf-8
 
 import sys, pickle
+sys.path.append('../src')
 import numpy as np
 from scipy.special import erf, erfinv
 from models import *
+from utils import *
 from train_funcs import *
 
 print(int(sys.argv[1]))
@@ -139,5 +141,5 @@ for l1, l2 in zip(('fp_pre', 'fp_post', 'lc_pre', 'lc_post'),
     to_save[l1] = {k: v['hE'][T:-1].std(axis=1) for k, v in l2.items()}
     to_save[l1]['spon'] = l2['Singing\n(Correct)']['hE'][:T].std(axis=1).mean()
 
-with open('results/EI_1HVC_%d.pkl' % int(sys.argv[1]), 'wb') as f:
+with open('../results/EI_1HVC_%d.pkl' % int(sys.argv[1]), 'wb') as f:
     pickle.dump(to_save, f)

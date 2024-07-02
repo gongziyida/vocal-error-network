@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
 import sys, pickle
+sys.path.append('../src')
 import numpy as np
 from scipy.special import erf, erfinv
 from models import *
+from utils import *
 from train_funcs import *
 
 #### Set up shared parameters and objects ####
@@ -94,7 +96,7 @@ FFexp = Experiment(FFnet, rH, syl, noise=1, T_test=T_test,
                    t_start=tsyl_start[:,:1], t_end=tsyl_end[:,:1])
 
 perts = []
-Ks = np.array([5, 10, 50, 100, 200, 300])
+Ks = np.array([10, 50, 100, 200, 300, 400])
 
 for K in Ks:
     pert_mean = np.zeros(NE)
@@ -111,11 +113,6 @@ FFres = FFexp.sim_multi(['perturb']*len(Ks), [True]*len(Ks), pert_args)
 for i in range(len(Ks)):
     assert np.all(EIres['bos'][i] == FFres['bos'][i])
 
-EIcorrs, FFcorrs = [], []
-for i, K in enumerate(Ks):
-    EIcorrs.append(correlation(EIres['rE'][i], EIres['bos'][i] - syl, dim=2))
-    FFcorrs.append(correlation(FFres['rE'][i], FFres['bos'][i] - syl, dim=2))
-    
 EIzs, FFzs = [], []
 for i, K in enumerate(Ks):
     # zEI, zFF = normalize(EIres['rE'][i], axis=1), normalize(FFres['rE'][i], axis=1)
@@ -128,5 +125,5 @@ for th in (1, 2, 3):
     EIsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), EIres['rE'])))
     FFsparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), FFres['rE'])))
 
-with open('results/vary_percent_pert_%s.pkl' % sys.argv[1], 'wb') as f:
-    pickle.dump((EIcorrs, FFcorrs, EIzs, FFzs, EIsparsity, FFsparsity), f)
+with open('../results/vary_percent_pert_%s.pkl' % sys.argv[1], 'wb') as f:
+    pickle.dump((EIzs, FFzs, EIsparsity, FFsparsity), f)

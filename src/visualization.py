@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from models import *
+from utils import *
 from matplotlib.colors import TwoSlopeNorm, Normalize
 
 def plot_wcol_corr(W_syl_corrs, figdim, figsize):
@@ -82,49 +82,48 @@ def plot_example_colW_syl(Ws, syl, i, rend_id):
     fig.tight_layout()
     return fig, ax
 
-def plot_raster_cmp_syl_dsyl(rE_ctrl, rE_err, syl, dsyl, t_start, t_end, 
-                             plot_z=False, sort_by=('p', 'e'), th=5,
+def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end, 
+                             plot_z=False, sort_by='e', th=5,
                              tpre=100, figsize=(2, 3)):
-    ''' visualize sylabus patterns and ctrl responses, and errors and error responses
+    ''' visualize correct and perturbed responses
+    rEs: list of (T, NE) arrays. 
     sort_by: 'p' => pattern, or 'e' => error
     '''
     ti, tj = int(t_start - tpre), int(t_end)
 
-    N = rE_ctrl.shape[1]
+    N = rEs[0].shape[1]
     if plot_z:
-        z1 = normalize(rE_ctrl[ti:tj], axis=0)
-        z2 = normalize(rE_err[ti:tj], axis=0)
-        zmin = max(min(list(map(lambda _: _[0].min(), [z1, z2]))), -5)
-        zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), 5)
+        zs = np.stack([normalize(_[ti:tj], axis=0) for _ in rEs], axis=0)
+        zmin = max(min(list(map(lambda _: _[0].min(), zs))), -5)
+        zmax = min(max(list(map(lambda _: _[0].max(), zs))), 5)
         norm = TwoSlopeNorm(0, zmin, zmax)
     else:
-        z1, z2 = rE_ctrl[ti:tj], rE_err[ti:tj]
-        zmax = min(max(list(map(lambda _: _[0].max(), [z1, z2]))), th)
+        zs = np.stack([_[ti:tj] for _ in rEs], axis=0)
+        zmax = min(max(list(map(lambda _: _[0].max(), zs))), th)
         norm = Normalize(0, zmax)
-        # norm = LogNorm(0.5, zmax)
-    idx_s, idx_ds = np.argsort(syl)[::-1], np.argsort(dsyl)[::-1]
+        
+    idx_s = np.argsort(syl)[::-1]
+    idx_ds = [np.argsort(_)[::-1] for _ in dsyl]
 
-    fig, ax = plt.subplots(1, 3, figsize=figsize, width_ratios=(1, 1, 0.1))
-
-    idx1 = idx_s if sort_by[0]=='p' else idx_ds
-    idx2 = idx_s if sort_by[1]=='p' else idx_ds
-    ax[0].imshow(z1[:,idx1].T, aspect='auto', cmap='hot', rasterized=True,
-                  interpolation='antialiased', norm=norm)
-    im = ax[1].imshow(z2[:,idx2].T, aspect='auto', cmap='hot', rasterized=True,
-                      interpolation='antialiased', norm=norm)
-    
-    for i in (0, 1):
+    fig, ax = plt.subplots(1, len(rEs)+1, figsize=figsize, 
+                           width_ratios=([1]*len(rEs))+[0.1]) # last for cbar
+    for i in range(len(rEs)):
+        idx = idx_s if sort_by=='p' else idx_ds[i]
+        im = ax[i].imshow(zs[i][:,idx].T, aspect='auto', cmap='hot', rasterized=True,
+                          interpolation='antialiased', norm=norm)
+        ax[i].spines.top.set_visible(True)
+        ax[i].spines.right.set_visible(True)
         ax[i].axvline(tpre, ls='--', c='k', lw=2)
-        ax[i].set(yticks=[], xlabel='Time (a.u.)', 
-                  xticks=[tpre], xticklabels=['song onset'])
+        ax[i].set(yticks=[], xlabel='Time', 
+                  xticks=[tpre, 250], xticklabels=['song\nonset', 250])
+        ax[i].set_title(test_names[i], fontsize=10)
+        
     ax[0].set_yticks([0, N-1], [1, N], rotation=90)
     ax[0].set_ylabel('E neuron index\n(sorted by error)')
-    ax[0].set_title('Singing\ncorrect', fontsize=10)
-    ax[1].set_title('Singing\nperturb', fontsize=10)
-    fig.colorbar(im, cax=ax[2])
-    ax[2].set(yticks=[0, th//2, th], yticklabels=[0, th//2, '≥%d' % th])
-    ax[2].set_title('Hz', ha='left', fontsize=10)
-    fig.tight_layout(pad=0.5)
+    fig.colorbar(im, cax=ax[-1])
+    ax[-1].set(yticks=[0, th//2, th], yticklabels=[0, th//2, '≥%d' % th])
+    ax[-1].set_title('Hz', ha='left', fontsize=10)
+    # fig.tight_layout(pad=0.5)
     return fig, ax
 
 def plot_tests_mean(rEs, rIs, test_names, ti, tj, plot_inh=True):
@@ -163,18 +162,18 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
         ax[0,i].set_title(l, fontsize=10)
         ax[-1,i].set(xlabel='Time (a.u.)')
         for j in range(corr.shape[1]):
-            ax[0,i].plot(corr[:,j], c=cmap(j/corr.shape[1]))
+            ax[0,i].plot(corr[:,j], c=cmap(j/syl.shape[0]))
         if i in tid_perturb_input: # non-zero error; calc corr
             if syl_ is None: # deafen
                 syl_ = 0
             corr = correlation(test[ti:tj], syl_ - syl, dim=2)
             for j in range(corr.shape[1]):
-                ax[1,i].plot(corr[:,j], c=cmap(j/corr.shape[1]))
+                ax[1,i].plot(corr[:,j], c=cmap(j/syl.shape[0]))
 
     for k, v in syl_order.items():
         for (i, t0, t1) in v:
-            ax[0,k].plot([t0, t1], [y, y], color=cmap(i/len(v)), lw=3)
-            ax[0,k].text(t0, y - 0.1, chr(65+i), color=cmap(i/len(v)), va='top')
+            ax[0,k].plot([t0, t1], [y, y], color=cmap(i/syl.shape[0]), lw=3)
+            ax[0,k].text(t0, y - 0.1, chr(65+i), color=cmap(i/syl.shape[0]), va='top')
             
     ax[0,0].set(ylabel=r'corr$(r^E, \xi)$')
     ax[1,0].set(ylabel=r'corr$(r^E, y - \xi)$')
@@ -202,7 +201,7 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
             q += 1
         
         for j in range(corr.shape[1]):
-            ax[axi].plot(corr[:,j], c=cmap(j/corr.shape[1]))
+            ax[axi].plot(corr[:,j], c=cmap(j/syl.shape[0]))
         ax[axi].set_title(l, fontsize=10)
         ax[axi].set(yticks=[0, 1], ylim=[-0.5, y+0.1], ylabel=yl, xlabel='Time')
 
@@ -249,7 +248,7 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
             cbar.set_ticks([np.ceil(zmin), 0, np.floor(zmax)-1])
             ax[p,k].axvline(T_burn-ti, ls='--', c='k', lw=2)
             ax[0,k].set(xticks=[], yticks=[])
-            ax[0,k].set_title(l, fontsize=10)
+            ax[0,k].set_title(l+'\n', fontsize=10)
             ax[-1,k].set(xlabel='Time (a.u.)', yticks=[])
         N = zs[0].shape[1]
         ax[p,0].set(ylabel=pop[p], yticks=[])#, yticks=[N//2, N])
@@ -257,8 +256,10 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
     cmap = plt.get_cmap('plasma')
     for k, v in syl_order.items():
         for (i, t0, t1) in v:
-            ax[0,k].add_patch(plt.Rectangle((t0, 0), t1-t0, -N/30, fc=cmap(i/len(v)), 
+            ax[0,k].add_patch(plt.Rectangle((t0, -10), t1-t0, -N/5, fc=cmap(i/len(v)), 
                                              clip_on=False, linewidth=0))
+            ax[0,k].text((t1+t0)/2, -N/5, chr(65+i), color=cmap(i/len(v)), 
+                         ha='center', va='bottom')
     fig.tight_layout()
     return fig, ax
     

@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
 import sys, pickle
+sys.path.append('../src')
 import numpy as np
 from scipy.special import erf, erfinv
 from models import *
+from utils import *
 from train_funcs import *
 
 #### Set up shared parameters and objects ####
@@ -64,8 +66,7 @@ th = -erfinv(r_rest * 2 / rmax - 1) * (np.sqrt(2) * s)
 phi = lambda x: rmax/2 * (1 + erf((x - th) / (np.sqrt(2) * s)))
 
 #### Test models ####
-T_test = int(tsyl_end[-1,0]) # before T_burn + T_rend
-Ks = np.array([1, 5, 10, 20, 30, 40, 50])
+Ks = np.array([5, 10, 20, 40, 60, 100])
 
 EIcorrs, FFcorrs = [], []
 EIpwcorrs, FFpwcorrs = [], []
@@ -76,7 +77,7 @@ for K in Ks:
                   w_inh=w_inh, wI=wI)
     FFnet = WCNet(NE, N_HVC, w0_mean, phi, tauE, w_inh=w_inh)
     
-    syl_cov = block_sym_mat(NE, K=K, var=9, cov=7.5)
+    syl_cov = block_sym_mat(NE, K=K, var=9, cov=8)
     syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
     aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
     
@@ -90,24 +91,27 @@ for K in Ks:
                        lr=-5e-2, w0_mean=w0_mean, tauW=1e5)
 
     # Test with perturbation
-    bos = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
-    aud_bos = generate_discrete_aud(T_test, NE, tsyl_start[:,:1], tsyl_end[:,:1], bos)
+    aud_bos = aud.copy()
+    for i in range(N_syl):
+        for j, (t0, t1) in enumerate(zip(tsyl_start[i], tsyl_end[i])):
+            aud_bos[int(t0):int(t1)] += rng.multivariate_normal(np.ones(NE), syl_cov)
     
-    ret_EI = EInet.sim(rE0, rI0, rH[:T_test], aud_bos, [], T_test, dt, 1, bilin_hebb)
-    ret_FF = FFnet.sim(rE0, rH[:T_test], aud_bos, [], T_test, dt, 1, bilin_hebb)
-
-    # Corr with error
-    err = block_apply(bos-syl, K=K, func=np.mean)
-    EIcorrs.append(correlation(block_apply(ret_EI[0], K=K, func=np.mean), err, dim=2))
-    FFcorrs.append(correlation(block_apply(ret_FF[0], K=K, func=np.mean), err, dim=2))
-
-    EIpwcorrs.append(correlation(ret_EI[0].T, ret_EI[0].T, dim=2))
-    FFpwcorrs.append(correlation(ret_FF[0].T, ret_FF[0].T, dim=2))
+    ret_EI = EInet.sim(rE0, rI0, rH, aud_bos, [], T, dt, 1, bilin_hebb)
+    ret_FF = FFnet.sim(rE0, rH, aud_bos, [], T, dt, 1, bilin_hebb)
+    
+    # pairwise correlations for syl-avg responses
+    EImean, FFmean = np.zeros((N_rend*N_syl, NE)), np.zeros((N_rend*N_syl, NE))
+    for i in range(N_syl):
+        for j, (t0, t1) in enumerate(zip(tsyl_start[i], tsyl_end[i])):
+            EImean[j*N_syl+i] = ret_EI[0][int(t0):int(t1)].mean(axis=0)
+            FFmean[j*N_syl+i] = ret_FF[0][int(t0):int(t1)].mean(axis=0)
+    EIpwcorrs.append(correlation(EImean.T, EImean.T, dim=2))
+    FFpwcorrs.append(correlation(FFmean.T, FFmean.T, dim=2))
     
     # sparsity
     for th in (1, 2, 3):
         EIsparsity[th].append((ret_EI[0][T_burn:] > th).mean(axis=1))
         FFsparsity[th].append((ret_FF[0][T_burn:] > th).mean(axis=1))
 
-with open('results/vary_input_dim_%s.pkl' % sys.argv[1], 'wb') as f:
-    pickle.dump((EIcorrs, FFcorrs, EIpwcorrs, FFpwcorrs, EIsparsity, FFsparsity), f)
+with open('../results/vary_input_dim_%s.pkl' % sys.argv[1], 'wb') as f:
+    pickle.dump((EIpwcorrs, FFpwcorrs, EIsparsity, FFsparsity), f)

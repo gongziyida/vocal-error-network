@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.special import erf, erfinv
+from tqdm import tqdm
 from models import *
 rng = np.random.default_rng()
 
@@ -107,9 +108,11 @@ class Experiment:
         rE0 = rng.normal(loc=1, scale=0.5, size=NE).clip(min=0)
         if hasattr(self.net, 'NI'):
             rI0 = rng.normal(loc=5, scale=0.5, size=self.net.NI).clip(min=0)
-            res = self.net.sim(rE0, rI0, rH, aud, [], self.T_test, self.dt, self.noise)[:2]
+            res = self.net.sim(rE0, rI0, rH, aud, [], self.T_test, self.dt, self.noise, 
+                               no_progress_bar=True)[:2]
         else: # Scalar
-            res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5)[:2]
+            res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5, 
+                               no_progress_bar=True)[:2]
 
         return res[0], res[1], bos, idx_si
 
@@ -119,7 +122,8 @@ class Experiment:
         if shuff_idx_list is None:
             shuff_idx_list = [None] * len(aud_list)
         rEs, rIs, boses, idxs = [], [], [], []
-        iterator = zip(aud_list, sing_list, pert_args_list, shuff_idx_list)
+        iterator = tqdm(zip(aud_list, sing_list, pert_args_list, shuff_idx_list), 
+                        total=len(aud_list))
         for aud, sing, pert_args, shuff_idx in iterator:
             rE, rI, bos, idx = self.sim(aud, sing, pert_args, shuff_idx)
             rEs.append(rE), rIs.append(rI), boses.append(bos), idxs.append(idx)
