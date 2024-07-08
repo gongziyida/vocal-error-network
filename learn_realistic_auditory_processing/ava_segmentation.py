@@ -1,4 +1,4 @@
-import os, glob, pickle
+import os, glob, pickle, shutil
 from joblib import Parallel, delayed
 from itertools import repeat
 from ava.segmenting.segment import segment
@@ -6,7 +6,8 @@ from ava.segmenting.segment import segment
 audio_dirs = glob.glob('../audio_data/[0-9]*')
 seg_dirs = ['../audio_segs/'+_.split('/')[-1] for _ in audio_dirs]
 for seg_dir in seg_dirs:
-    if not os.path.exists(seg_dir):
+    if os.path.exists(seg_dir):
+        shutil.rmtree(seg_dir)
         os.mkdir(seg_dir)
 
 audio_dirs1 = [_ for _ in audio_dirs if int(_.split('/')[-1])<100] # young

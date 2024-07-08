@@ -1,4 +1,4 @@
-import os, glob
+import os, glob, shutil
 from joblib import Parallel, delayed
 from itertools import repeat
 from ava.preprocessing.utils import get_spec # makes spectrograms
@@ -7,20 +7,21 @@ from ava.preprocessing.preprocess import process_sylls
 
 preprocess_params = {
     'get_spec': get_spec, # spectrogram maker
-    'max_dur': 0.35, # maximum syllable duration
-    'min_freq': 5e2, # minimum frequency
-    'max_freq': 10e3, # maximum frequency
+    'max_dur': 0.2, # maximum syllable duration
+    'min_freq': 1e3, # minimum frequency
+    'max_freq': 8e3, # maximum frequency
     'num_freq_bins': 50, # downsample using interpolation
-    'num_time_bins': 12,
-    'nperseg': 256, # FFT
-    'noverlap': 128, # FFT
-    'spec_min_val': 3.0, # minimum log-spectrogram value
+    'num_time_bins': 20,
+    'nperseg': 1024, # FFT
+    'noverlap': 512,# FFT
+    'spec_min_val': 1.5, # minimum log-spectrogram value
     'spec_max_val': 6.5, # maximum log-spectrogram value
     'fs': 44100, # audio samplerate
     'mel': False, # frequency spacing, mel or linear
     'time_stretch': False, # stretch short syllables?
     'within_syll_normalize': False, # normalize spectrogram values on a
-                                    # spectrogram-by-spectrogram basis
+                                   # spectrogram-by-spectrogram basis
+    'normalize_quantile': 0.4, # only used if within_syll_normalize is True
     'max_num_syllables': None, # maximum number of syllables per directory
     'sylls_per_file': 100, # syllable per file
     'real_preprocess_params': ('min_freq', 'max_freq', 'spec_min_val', 
@@ -37,7 +38,8 @@ audio_dirs = glob.glob('../audio_data/[0-9]*')
 seg_dirs = ['../audio_segs/'+_.split('/')[-1] for _ in audio_dirs]
 spec_dirs = ['../audio_spec/'+_.split('/')[-1] for _ in audio_dirs]
 for spec_dir in spec_dirs:
-    if not os.path.exists(spec_dir):
+    if os.path.exists(spec_dir):
+        shutil.rmtree(spec_dir)
         os.mkdir(spec_dir)
 
 preprocess_params = tune_syll_preprocessing_params(audio_dirs, seg_dirs, \
