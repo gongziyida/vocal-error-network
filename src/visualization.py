@@ -214,8 +214,8 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
     fig.tight_layout()
     return fig, ax
 
-def plot_tests_raster(tests, test_names, ti, tj, T_burn, 
-                      plot_inh=False, syl_order=dict()):
+def plot_tests_heatmap(tests, test_names, ti, tj, T_burn, 
+                       plot_inh=False, syl_order=dict()):
     ''' 
     tests: (rEs, rIs) if plot_inh, else (rEs,)
     syl_order: a dictionary {test_index: [(syl_index, t_start, t_end)...]}. 
@@ -260,7 +260,7 @@ def plot_tests_raster(tests, test_names, ti, tj, T_burn,
                                              clip_on=False, linewidth=0))
             ax[0,k].text((t1+t0)/2, -N/5, chr(65+i), color=cmap(i/len(v)), 
                          ha='center', va='bottom')
-    fig.tight_layout()
+    # fig.tight_layout()
     return fig, ax
     
 def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):

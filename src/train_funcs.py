@@ -110,7 +110,7 @@ class Experiment:
             rI0 = rng.normal(loc=5, scale=0.5, size=self.net.NI).clip(min=0)
             res = self.net.sim(rE0, rI0, rH, aud, [], self.T_test, self.dt, self.noise, 
                                no_progress_bar=True)[:2]
-        else: # Scalar
+        else: # Scalar; WCNet
             res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5, 
                                no_progress_bar=True)[:2]
 
