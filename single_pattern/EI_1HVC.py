@@ -32,7 +32,6 @@ tsyl_start, tsyl_end = np.round(tsyl_start), np.round(tsyl_end)
 syl = rng.normal(1, 2, size=(N_syl, NE))#.clip(min=0)
 syl_rand = syl.copy()
 rng.shuffle(syl_rand, axis=1)
-save_W_ts = np.round(tsyl_end[-1,:-1]).astype(int)
 
 rH = np.zeros((T, N_HVC))
 for i in range(N_HVC):
@@ -49,11 +48,12 @@ def test_EI(net, HVC_idx, T_test=2000, dt=1):
     ret = dict()
     
     for i, n in enumerate(names):
-        rE = np.zeros((T_test, net.NE))
-        rI = np.zeros((T_test, net.NI))
-        hE, hI = rE.copy(), rI.copy()
-        rE[0] = rng.normal(loc=1, scale=0.5, size=net.NE).clip(min=0)
-        rI[0] = rng.normal(loc=5, scale=0.5, size=net.NI).clip(min=0)
+        rE, hI = np.zeros((T, net.NE)), np.zeros((T, net.NI))
+        recE, recI = np.zeros((T, net.NE)), np.zeros((T, net.NI))
+        hE = rng.normal(loc=-10, scale=0.5, size=net.NE)
+        hI = rng.normal(loc=-1, scale=0.5, size=net.NI)
+        rE[0] = self.phiE(hE)
+        rI[0] = self.phiE(hI)
         rH, aud = np.zeros((T_test, net.NH)), np.zeros((T_test, net.NE))
         if i == 0:
             rH[T_burn:] = peak_rate
@@ -67,24 +67,31 @@ def test_EI(net, HVC_idx, T_test=2000, dt=1):
             aud[T_burn:] = syl[0]
     
         for t in tqdm(range(1, T_test)):
+            aux = self.W @ rH[t-1] - self.w_inh * rH[t-1].sum()
+            
+            recE[t-1] = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
+            recI = self.JIE @ rE[t-1] - self.JII @ rI[t-1]
+            
             aux = net.W @ rH[t-1] - net.w_inh * rH[t-1].sum()
-            hE[t-1] = net.JEE @ rE[t-1] - net.JEI @ rI[t-1]
-            hI[t-1] = net.JIE @ rE[t-1] - net.JII @ rI[t-1]
-            dI = -rI[t-1] + net.phiI(hI[t-1] + net.wI * rH[t-1].mean())
-            rI[t] = rI[t-1] + dI * dt / net.tauI
-            drE = -rE[t-1] + net.phiE(aux + aud[t-1] + hE[t-1])
-            rE[t] = rE[t-1] + drE * dt / net.tauE
-        aux = dict(rE=rE, rI=rI, hE=hE, hI=hI, rH=rH, aud=aud)
+            recE[t-1] = net.JEE @ rE[t-1] - net.JEI @ rI[t-1]
+            recI[t-1] = net.JIE @ rE[t-1] - net.JII @ rI[t-1]
+            dE = -hE + aux + aud[t-1] + recE[t-1]
+            dI = -hI + recI[t-1] + net.wI * rH[t-1].mean()
+            hE += dE * dt / net.tauE
+            hI += dI * dt / net.tauI
+            rE[t] = self.phiE(hE)
+            rI[t] = self.phiE(hI)
+            
+        aux = dict(rE=rE, rI=rI, recE=recE, recI=recI, rH=rH, aud=aud)
         ret[n] = aux
     return ret
 
-lr, tauW = -1e-1, 1e5
-rEmax, rImax, thE, thI, sE, sI = 40, 100, -5, 0, 2, 2
+rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
 phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
 phiI = lambda x: rImax/2 * (1 + erf((x - thI) / (np.sqrt(2) * sI)))
 
 def quick_net(gamma, w0_mean, w_inh, 
-              JEE0=1, JEI0=0.8, JIE0=1.25, JII0=0.9, wI=0, tauE=40, tauI=10):
+              JEE0=1, JEI0=1.7, JIE0=1.2, JII0=1.8, wI=0, tauE=30, tauI=10):
     gen = lognormal_gen
     # gen = const_gen
     c = 1
@@ -99,38 +106,25 @@ def quick_net(gamma, w0_mean, w_inh,
                 JEE=JEE, JEI=JEI, JIE=JIE, JII=JII, w_inh=w_inh, wI=wI)
     return net
     
-def bilin_hebb(net, aiv, hvc, lr, w0_mean, tauW):
-    # lr < 0, anti-Hebbian
-    for i, h in enumerate(hvc):
-        dW = lr * (aiv - 1) * h - (net.W[:,i] - w0_mean)
-        net.W[:,i] = np.clip(net.W[:,i] + dW / tauW, a_min=0, a_max=None)
-        
 w0_mean = 0.1/N_HVC
 w_inh = w0_mean
-net_fp = quick_net(0.2, w0_mean, w_inh)
+net_fp = quick_net(0.1, w0_mean, w_inh)
 net_lc = quick_net(0.3, w0_mean, w_inh)
+
+plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), 
+                         lr=dict(HVC=-8e-2), tauW=1e5, asyn_H=0, rE_th=1)
+dt = 1
+hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
+hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
 
 # Fixed point scenario
 fp_pre = test_EI(net_fp, [0])
-
-rE0 = rng.normal(loc=1, scale=0.5, size=NE).clip(min=0)
-rI0 = rng.normal(loc=5, scale=0.5, size=NI).clip(min=0)
-dt = 1
-train_fp = net_fp.sim(rE0, rI0, rH, aud, save_W_ts, T, dt, 0, bilin_hebb,
-                      lr=lr, w0_mean=w0_mean, tauW=tauW)
-
+train_fp = net_fp.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)
 fp_post = test_EI(net_fp, [0])
-
 
 # Limit cycle or multi-dimensional attractor scenario
 lc_pre = test_EI(net_lc, [0])
-
-rE0 = rng.normal(loc=1, scale=0.5, size=NE).clip(min=0)
-rI0 = rng.normal(loc=5, scale=0.5, size=NI).clip(min=0)
-dt = 1
-train_lc = net_lc.sim(rE0, rI0, rH, aud, save_W_ts, T, dt, 0, bilin_hebb,
-                      lr=lr, w0_mean=w0_mean, tauW=tauW)
-
+train_lc = net_lc.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)
 lc_post = test_EI(net_lc, [0])
 
 # Save
@@ -138,8 +132,8 @@ to_save = dict()
 for l1, l2 in zip(('fp_pre', 'fp_post', 'lc_pre', 'lc_post'),
                   (fp_pre, fp_post, lc_pre, lc_post)):
     T = np.where(l2['Singing\n(Correct)']['rH'][:,0] > 0)[0][0] # song onset
-    to_save[l1] = {k: v['hE'][T:-1].std(axis=1) for k, v in l2.items()}
-    to_save[l1]['spon'] = l2['Singing\n(Correct)']['hE'][:T].std(axis=1).mean()
+    to_save[l1] = {k: v['recE'][T:-1].std(axis=1) for k, v in l2.items()}
+    to_save[l1]['spon'] = l2['Singing\n(Correct)']['recE'][:T].std(axis=1).mean()
 
 with open('../results/EI_1HVC_%d.pkl' % int(sys.argv[1]), 'wb') as f:
     pickle.dump(to_save, f)

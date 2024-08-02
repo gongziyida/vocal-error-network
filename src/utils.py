@@ -50,25 +50,33 @@ def lognormal_gen(rng, mean, std, size):
 def const_gen(val, size):
     return np.zeros(size) + val
 
-def normalize(sig, axis):
-    m = sig.mean(axis=axis, keepdims=True)
+def normalize(sig, axis, center=True):
+    m = sig.mean(axis=axis, keepdims=True) if center else 0
     s = sig.std(axis=axis, keepdims=True)
     return (sig - m) / s
 
-def correlation(sig1, sig2, dim=2): 
+def correlation(sig1, sig2, dim=2, cosine=False): 
     ''' 
     sig1: (T1, T2, ..., Tk, N)
     sig2: (P, N) if dim == 2, or (T1, T2, ..., Tk, N) if dim == 1
     dim: int
         If 2, calculate corr(sig1[t], sig2[p]) and return (T1, T2, ..., Tk, P)
         If 1, calculate corr(sig1[t], sig2[t]) and return (T1, T2, ..., Tk) 
+    cosine: bool
+        If True, compute the cosine similarity instead
     '''
-    sig1 = normalize(sig1, -1)
-    sig2 = normalize(sig2, -1)
+    if cosine:
+        sig1 = sig1.copy() / np.sqrt((sig1**2).sum(axis=-1, keepdims=True))
+        sig2 = sig2.copy() / np.sqrt((sig2**2).sum(axis=-1, keepdims=True))
+    else:
+        sig1 = normalize(sig1, -1)
+        sig2 = normalize(sig2, -1)
     if dim == 1:
-        corr = (sig1 * sig2).mean(axis=-1)
+        corr = (sig1 * sig2).sum(axis=-1)
     elif dim == 2:
-        corr = sig1 @ sig2.T / sig1.shape[-1]
+        corr = sig1 @ sig2.T 
+    if not cosine: # calc mean
+        corr /= sig1.shape[-1]
     assert np.nanmax(np.abs(corr)) < 1 + 1e-5
     return corr
     

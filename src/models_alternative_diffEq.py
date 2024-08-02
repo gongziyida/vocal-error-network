@@ -28,14 +28,13 @@ class WCNet: # Wilson-Cowan
                 print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
-    def sim(self, hE0, rH, aud, save_W_ts, T, dt, noise_strength, 
-            plasticity=None, lr=0, hI0=0, no_progress_bar=False, **plasticity_args):
+    def sim(self, rE0, rH, aud, save_W_ts, T, dt, noise_strength, 
+            plasticity=None, lr=0, rI0=0, no_progress_bar=False, **plasticity_args):
         rng = np.random.default_rng()
         rE = np.zeros((T, self.NE))
         rI = np.zeros(T) # rI is already mean in WC model
-        hE, hI = np.zeros(self.NE)+hE0, hI0
-        rE[0] = self.phiE(hE0)
-        rI[0] = self.phiE(hI0)
+        rE[0] = rE0
+        rI[0] = rI0
 
         Ws = [self.W.copy()]
         mean_HVC_input = np.zeros(T)
@@ -51,13 +50,11 @@ class WCNet: # Wilson-Cowan
                 recE = self.JEE * rE[t-1].mean() - self.JEI * rI[t-1]
                 recI = self.JIE * rE[t-1].mean() - self.JII * rI[t-1]
                 
-                dI = -hI + recI + self.wI * rH[t-1].mean()
-                hI += dI * dt / self.tauI
-                rI[t] = self.phiE(hI)
-                
-            dE = -hE + aux + aud[t-1] + recE + noise
-            hE += dE * dt / self.tauE
-            rE[t] = self.phiE(hE)
+                dI = -rI[t-1] + self.phiI(recI + self.wI * rH[t-1].mean())
+                rI[t] = rI[t-1] + dI * dt / self.tauI
+            
+            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + recE + noise)
+            rE[t] = rE[t-1] + drE * dt / self.tauE
             
             if lr != 0:
                 plasticity(self, t, rE, rH, lr, **plasticity_args)
@@ -73,15 +70,14 @@ class EINet(WCNet):
         super().__init__(NE, NH, w0_mean, phiE, tauE, tauI, phiI,
                          JEE, JEI, JIE, JII, w_inh, wI, w0_std, cW)
         
-    def sim(self, hE0, hI0, rH, aud, save_W_ts, T, dt, noise_strength, 
+    def sim(self, rE0, rI0, rH, aud, save_W_ts, T, dt, noise_strength, 
             plasticity=dict(), lr=dict(), no_progress_bar=False, **plasticity_args):
         rng = np.random.default_rng()
         rE = np.zeros((T, self.NE))
-        recE = np.zeros((T, self.NE))
+        hE = np.zeros((T, self.NE))
         rI = np.zeros((T, self.NI))
-        hE, hI = np.zeros(self.NE) + hE0, np.zeros(self.NI) + hI0
-        rE[0] = self.phiE(hE)
-        rI[0] = self.phiE(hI)
+        rE[0] = rE0
+        rI[0] = rI0
 
         mean_HVC_input = np.zeros(T)
         Ws = dict()
@@ -98,15 +94,13 @@ class EINet(WCNet):
             noiseE = rng.normal(0, noise_strength, size=self.NE)
             noiseI = rng.normal(0, noise_strength, size=self.NI)
             
-            recE[t-1] = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
+            hE[t-1] = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
             recI = self.JIE @ rE[t-1] - self.JII @ rI[t-1]
             
-            dE = -hE + aux + aud[t-1] + recE[t-1] + noiseE
-            dI = -hI + recI + self.wI * rH[t-1].mean() + noiseI
-            hE += dE * dt / self.tauE
-            hI += dI * dt / self.tauI
-            rE[t] = self.phiE(hE)
-            rI[t] = self.phiE(hI)
+            dI = -rI[t-1] + self.phiI(recI + self.wI * rH[t-1].mean() + noiseI)
+            rI[t] = rI[t-1] + dI * dt / self.tauI
+            drE = -rE[t-1] + self.phiE(aux + aud[t-1] + hE[t-1] + noiseE)
+            rE[t] = rE[t-1] + drE * dt / self.tauE
             
             if len(plasticity) > 0:
                 for k, f in plasticity.items():
@@ -117,7 +111,7 @@ class EINet(WCNet):
                 if 'JEE' in lr.keys():
                     Ws['JEE'].append(self.JEE.copy())
         
-        return rE, rI, Ws, mean_HVC_input, recE
+        return rE, rI, Ws, mean_HVC_input, hE
 
 
 #### Plasticity functions ####

@@ -4,13 +4,12 @@ from tqdm import tqdm
 from models import *
 rng = np.random.default_rng()
 
-def generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC, inter_syl_interval_ratio=0):
+def generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC, inter_syl_interval=0):
     # ( Number of syllables , Number of renditions )
     _ = np.arange(0, T - T_burn + T_rend, T_rend) # start and end time of each rendition
     # start and end time of each syllabus; inter-rendition interval = duration of a syllabus
     _ = np.linspace(_[:-1], _[1:], num=N_syl+1, endpoint=False) + T_burn
     tsyl_start, tsyl_end = _[:-1], _[1:]
-    inter_syl_interval = (tsyl_end - tsyl_start)[0,0] * inter_syl_interval_ratio
     tsyl_start, tsyl_end = np.round(tsyl_start), np.round(tsyl_end - inter_syl_interval)
     # ( Number of HVC neurons , Number of renditions )
     burst_ts = np.linspace(tsyl_start[0,:], tsyl_end[-1,:], num=N_HVC, endpoint=True)
@@ -105,13 +104,13 @@ class Experiment:
 
         rH = self.rH if sing else np.zeros_like(self.rH)
         
-        rE0 = rng.normal(loc=1, scale=0.5, size=NE).clip(min=0)
+        hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
         if hasattr(self.net, 'NI'):
-            rI0 = rng.normal(loc=5, scale=0.5, size=self.net.NI).clip(min=0)
-            res = self.net.sim(rE0, rI0, rH, aud, [], self.T_test, self.dt, self.noise, 
+            hI0 = rng.normal(loc=0, scale=0.5, size=self.net.NI)
+            res = self.net.sim(hE0, hI0, rH, aud, [], self.T_test, self.dt, self.noise, 
                                no_progress_bar=True)[:2]
         else: # Scalar; WCNet
-            res = self.net.sim(rE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5, 
+            res = self.net.sim(hE0, rH, aud, [], self.T_test, self.dt, self.noise, rI0=5, 
                                no_progress_bar=True)[:2]
 
         return res[0], res[1], bos, idx_si

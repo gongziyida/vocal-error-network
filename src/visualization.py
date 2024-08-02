@@ -1,31 +1,37 @@
 import numpy as np
+from scipy.sparse import issparse
 import matplotlib.pyplot as plt
 from utils import *
 from matplotlib.colors import TwoSlopeNorm, Normalize
 
-def plot_wcol_corr(W_syl_corrs, figdim, figsize):
+def plot_wcol_corr(Ws, syl, figdim, figsize, sort=False):
     ''' Plot the correlation between columns of W and syllabi
     '''
-    N_HVC, N_syl = W_syl_corrs[0].shape
+    if issparse(Ws[0]):
+        Ws = [_.toarray() for _ in Ws]
+    corrs = [correlation(_.T, syl, dim=2) for _ in Ws]
+    if sort:
+        idx = np.argsort(np.nanargmin(corrs[-1], axis=1))
+        corrs = [_[idx,:] for _ in corrs]
+    
+    N_syl, N = syl.shape[0], Ws[0].shape[1]
     xticks = np.arange(N_syl)
     xticklabels = list(map(chr, range(65, 65+N_syl))) # 65 is A and 97 is a
+    
     fig, ax = plt.subplots(*figdim, sharex='all', sharey='all', figsize=figsize)
     ax = ax.flatten()
-    l = min(len(W_syl_corrs), len(ax))
-    idx = np.round(np.linspace(0, len(W_syl_corrs)-1, num=l, endpoint=True)).astype('int')
+    l = min(len(corrs), len(ax))
+    idx = np.round(np.linspace(0, len(corrs)-1, num=l, endpoint=True)).astype('int')
     for i, j in enumerate(idx):
-        im = ax[i].imshow(W_syl_corrs[j], vmax=1, vmin=-1, cmap='seismic', aspect='auto')
+        im = ax[i].imshow(corrs[j], vmax=1, vmin=-1, cmap='seismic', aspect='auto', 
+                          extent=(-0.5, N_syl-0.5, N, 1), interpolation='none')
         ax[i].set_title('Rendition %d' % j, fontsize=10)
         ax[i].set(xticks=xticks, xticklabels=xticklabels)
-    ax[0].set(ylabel='HVC index', yticks=[0, N_HVC-1], yticklabels=[1, N_HVC])
-    
-    fig.suptitle(r'Corr(col$_i$W , $\vec\xi_j$)')
-    fig.tight_layout()
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.82, 0.15, 0.01, 0.7])
-    fig.colorbar(im, cax=cbar_ax)
+    ax[0].set_yticks([1,N])
+    fig.colorbar(im, ax=ax)
+    # fig.suptitle(r'Corr(col$_i$W , $\vec\xi_j$)')
     return fig, ax
-
+    
 def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
     ''' Plot some training stats
     '''
@@ -143,7 +149,7 @@ def plot_tests_mean(rEs, rIs, test_names, ti, tj, plot_inh=True):
     return fig, ax
 
 def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
-                     syl_order=dict(), y=0.9):
+                     syl_order=dict(), y=0.9, cosine=False):
     ''' Correlations with syls and errors over time
     tests: list containing the excitatory rates
     syl_tests: sylabi used for tests
@@ -181,7 +187,7 @@ def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_inpu
     return fig, ax
     
 def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
-                            syl_order=dict(), y=0.9):
+                            syl_order=dict(), y=0.9, cosine=False):
     ''' Correlations with syls and errors over time, see `plot_tests_corrs`
     '''
     cmap = plt.get_cmap('plasma')
@@ -322,3 +328,9 @@ def plot_rate_and_change_dists(rEs, test_names, rE_ctrl, ti, tj):
     ax[-1,1].set(xlabel='Change (Hz)')
     fig.tight_layout()
     return fig, ax
+
+def plot_mean_std(ax, mean, std, a_fill, c, xs=None, label=''):
+    if xs is None:
+        xs = np.arange(len(mean))
+    ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
+    return ax.plot(xs, mean, c=c, label=label)
