@@ -29,7 +29,7 @@ _ = np.linspace(_[:-1], _[1:], num=N_syl+1, endpoint=True) + T_burn
 tsyl_start, tsyl_end = _[:-1], _[1:]
 tsyl_start, tsyl_end = np.round(tsyl_start), np.round(tsyl_end)
 
-syl = rng.normal(1, 2, size=(N_syl, NE))#.clip(min=0)
+syl = rng.normal(1, 3, size=(N_syl, NE))#.clip(min=0)
 syl_rand = syl.copy()
 rng.shuffle(syl_rand, axis=1)
 
@@ -48,12 +48,12 @@ def test_EI(net, HVC_idx, T_test=2000, dt=1):
     ret = dict()
     
     for i, n in enumerate(names):
-        rE, hI = np.zeros((T, net.NE)), np.zeros((T, net.NI))
+        rE, rI = np.zeros((T, net.NE)), np.zeros((T, net.NI))
         recE, recI = np.zeros((T, net.NE)), np.zeros((T, net.NI))
         hE = rng.normal(loc=-10, scale=0.5, size=net.NE)
         hI = rng.normal(loc=-1, scale=0.5, size=net.NI)
-        rE[0] = self.phiE(hE)
-        rI[0] = self.phiE(hI)
+        rE[0] = net.phiE(hE)
+        rI[0] = net.phiE(hI)
         rH, aud = np.zeros((T_test, net.NH)), np.zeros((T_test, net.NE))
         if i == 0:
             rH[T_burn:] = peak_rate
@@ -67,11 +67,6 @@ def test_EI(net, HVC_idx, T_test=2000, dt=1):
             aud[T_burn:] = syl[0]
     
         for t in tqdm(range(1, T_test)):
-            aux = self.W @ rH[t-1] - self.w_inh * rH[t-1].sum()
-            
-            recE[t-1] = self.JEE @ rE[t-1] - self.JEI @ rI[t-1]
-            recI = self.JIE @ rE[t-1] - self.JII @ rI[t-1]
-            
             aux = net.W @ rH[t-1] - net.w_inh * rH[t-1].sum()
             recE[t-1] = net.JEE @ rE[t-1] - net.JEI @ rI[t-1]
             recI[t-1] = net.JIE @ rE[t-1] - net.JII @ rI[t-1]
@@ -79,8 +74,8 @@ def test_EI(net, HVC_idx, T_test=2000, dt=1):
             dI = -hI + recI[t-1] + net.wI * rH[t-1].mean()
             hE += dE * dt / net.tauE
             hI += dI * dt / net.tauI
-            rE[t] = self.phiE(hE)
-            rI[t] = self.phiE(hI)
+            rE[t] = net.phiE(hE)
+            rI[t] = net.phiE(hI)
             
         aux = dict(rE=rE, rI=rI, recE=recE, recI=recI, rH=rH, aud=aud)
         ret[n] = aux
@@ -91,12 +86,11 @@ phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
 phiI = lambda x: rImax/2 * (1 + erf((x - thI) / (np.sqrt(2) * sI)))
 
 def quick_net(gamma, w0_mean, w_inh, 
-              JEE0=1, JEI0=1.7, JIE0=1.2, JII0=1.8, wI=0, tauE=30, tauI=10):
+              JEE0=0.22, JEI0=0.2, JIE0=0.4, JII0=0.3, wI=0, tauE=30, tauI=10):
     gen = lognormal_gen
     # gen = const_gen
     c = 1
     sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * gamma
-    # sEE *= 1.3
     JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE) / np.sqrt(NE)
     JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI) / np.sqrt(NI)
     JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE) / np.sqrt(NE)
@@ -109,10 +103,10 @@ def quick_net(gamma, w0_mean, w_inh,
 w0_mean = 0.1/N_HVC
 w_inh = w0_mean
 net_fp = quick_net(0.1, w0_mean, w_inh)
-net_lc = quick_net(0.3, w0_mean, w_inh)
+net_lc = quick_net(1, w0_mean, w_inh)
 
 plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), 
-                         lr=dict(HVC=-8e-2), tauW=1e5, asyn_H=0, rE_th=1)
+                         lr=dict(HVC=-2e-2), tauW=1e5, asyn_H=0, rE_th=1)
 dt = 1
 hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
 hI0 = rng.normal(loc=-1, scale=0.5, size=NI)

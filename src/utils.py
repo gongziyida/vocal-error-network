@@ -53,6 +53,7 @@ def const_gen(val, size):
 def normalize(sig, axis, center=True):
     m = sig.mean(axis=axis, keepdims=True) if center else 0
     s = sig.std(axis=axis, keepdims=True)
+    s[s==0] = 1e-5
     return (sig - m) / s
 
 def correlation(sig1, sig2, dim=2, cosine=False): 

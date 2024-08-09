@@ -19,17 +19,9 @@ T_burn = 500 # Burning
 T = T_burn + N_rend * T_rend # Total
 
 # Syllables and time stamps
-# syl = rng.normal(1, 3, size=(N_syl, NE))#.clip(min=0)
 N_shared_channels = 1
 syl_cov = block_sym_mat(NE, K=N_shared_channels, var=9, cov=7.5)
-syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
 tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC)
-
-_ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
-rH = generate_HVC(T, burst_ts, peak_rate+_, kernel_width+_)
-
-# (T, NE)
-aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
 
 gen = lognormal_gen
 c = 0.5
@@ -57,11 +49,16 @@ df = dict(model=[], cW=[], correct_similarity_TS=[], correct_similarity_BOS=[],
 
 w0_mean, w0_std = 1/N_HVC, 0
 tauE, tauI, dt = 30, 10, 1
-cWs = (0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1.0)
+cWs = (0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1)
 
 for cW in cWs:
     w_inh = w0_mean*cW
     for repeat in range(N_repeat):
+        _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
+        rH = generate_HVC(T, burst_ts, peak_rate+_, kernel_width+_)
+        syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
+        aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
+        
         JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5) / np.sqrt(NE)
         JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
         JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)

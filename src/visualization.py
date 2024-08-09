@@ -329,8 +329,8 @@ def plot_rate_and_change_dists(rEs, test_names, rE_ctrl, ti, tj):
     fig.tight_layout()
     return fig, ax
 
-def plot_mean_std(ax, mean, std, a_fill, c, xs=None, label=''):
+def plot_mean_std(ax, mean, std, a_fill, c, ls='-', xs=None, label=''):
     if xs is None:
         xs = np.arange(len(mean))
     ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
-    return ax.plot(xs, mean, c=c, label=label)
+    return ax.plot(xs, mean, c=c, label=label, ls=ls)

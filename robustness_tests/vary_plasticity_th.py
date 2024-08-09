@@ -19,17 +19,9 @@ T_burn = 500 # Burning
 T = T_burn + N_rend * T_rend # Total
 
 # Syllables and time stamps
-# syl = rng.normal(1, 3, size=(N_syl, NE))#.clip(min=0)
 N_shared_channels = 1
 syl_cov = block_sym_mat(NE, K=N_shared_channels, var=9, cov=7.5)
-syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
 tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC)
-
-_ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
-rH = generate_HVC(T, burst_ts, peak_rate+_, kernel_width+_)
-
-# (T, NE)
-aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
 
 gen = lognormal_gen
 c = 0.5
@@ -46,12 +38,6 @@ rmax, s = 50, 2
 th = -erfinv(r_rest * 2 / rmax - 1) * (np.sqrt(2) * s)
 phi = lambda x: rmax/2 * (1 + erf((x - th) / (np.sqrt(2) * s)))
 
-w0_mean, w0_std = 1/N_HVC, 0
-cW_E2E = 0.05
-w_inh_HVC2E = w0_mean
-w_inh_E2E = w0_mean*cW_E2E
-tauE, tauI, dt = 30, 10, 1
-
 T_test = T_burn + T_rend
 i_pert = 1
 ti, tj = int(tsyl_start[i_pert,0]), int(tsyl_end[i_pert,0])
@@ -61,8 +47,19 @@ N_repeat = 10
 df = dict(model=[], th=[], correct_similarity_TS=[], correct_similarity_BOS=[], 
           perturb_similarity_TS=[], perturb_similarity_BOS=[])
 
+w0_mean, w0_std = 1/N_HVC, 0
+cW_E2E = 0.05
+w_inh_HVC2E = w0_mean
+w_inh_E2E = w0_mean*cW_E2E
+tauE, tauI, dt = 30, 10, 1
+
 for th in range(6):
     for repeat in range(N_repeat):
+        _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
+        rH = generate_HVC(T, burst_ts, peak_rate+_, kernel_width+_)
+        syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
+        aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
+
         JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5) / np.sqrt(NE)
         JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
         JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
