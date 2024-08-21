@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.sparse import random as srandom
+from sklearn.decomposition import PCA
 
 def generate_matrix(dim1, dim2, rand_gen, c=1, sparse=False, **kwargs):
     if c < 1:
@@ -107,3 +108,19 @@ def temporal_sort(r, by, t0=0):
                          np.where(mask_neg)[0][idx_neg]])
     r_ret = r[:,idx_all]
     return r_ret, idx_all
+
+def PCA_proj(data, n_components=3, normalize_data=True):
+    ''' data : (trials, T, neurons) or (T, neurons)
+    '''
+    has_trial_dim = len(data.shape) == 3 # the first dimension is trial
+    batch_axes = (0,1) if has_trial_dim else 0
+    if normalize_data:
+        data = normalize(data, axis=batch_axes)
+    data_ = np.vstack(data) if has_trial_dim else data # for PCA
+    pca = PCA(n_components=n_components).fit(data_)
+    vec, val = pca.components_, pca.explained_variance_
+    proj = data @ vec.T # (trials, T, n_components) or (T, n_components)
+    # flip axis if necesary, for better visualization
+    flip = proj.max(axis=batch_axes) < -proj.min(axis=batch_axes)
+    vec[flip], proj[...,flip] = -vec[flip], -proj[...,flip]
+    return vec, val, proj

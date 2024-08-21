@@ -334,3 +334,16 @@ def plot_mean_std(ax, mean, std, a_fill, c, ls='-', xs=None, label=''):
         xs = np.arange(len(mean))
     ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
     return ax.plot(xs, mean, c=c, label=label, ls=ls)
+
+
+def draw_traj(ax, traj, cmaps, zorders, dt=5):
+    T = traj.shape[-2]
+    for i, (cmap, z) in enumerate(zip(cmaps, zorders)):
+        cmap = plt.get_cmap(cmap)
+        for t in range(0, T, dt):
+            ax.plot(*traj[i,t:t+dt+1].T, c=cmap(t/T), lw=2, zorder=z)
+
+def draw_vec(ax, origin, vec, scale, color):
+    vec = scale * vec + origin
+    ap = dict(color=color, width=1, headlength=5, headwidth=5, shrink=0)
+    ax.annotate('', xy=vec, xytext=origin, annotation_clip=False, arrowprops=ap)
