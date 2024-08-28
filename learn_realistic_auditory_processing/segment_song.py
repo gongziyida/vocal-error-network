@@ -39,7 +39,8 @@ def get_spec(audio, fs, max_dur, min_freq, max_freq, num_freq_bins, num_time_bin
     spec = np.clip(spec, 0.0, 1.0)
     return spec
     
-spec_song, spec_song_pert, spec_syl, spec_syl_pert = [], [], [], []
+spec_song, spec_song_weak_pert, spec_song_strong_pert = [], [], []
+spec_syl, spec_syl_weak_pert, spec_syl_strong_pert = [], [], []
 syl_on, syl_off, song_Ts = [], [], []
 song_kwargs = dict(min_freq=1e3, max_freq=8e3, num_freq_bins=50, spec_min=4, spec_max=8, 
                    num_time_bins=80, max_dur=1.1, l_pad=0, r_pad=0)
@@ -72,13 +73,15 @@ for f in NOTE_FILES:
         spec_song.append(get_spec(song, fs, **song_kwargs))
 
         # song spectrum with perturbation between pert_t0 and pert_t1
-        song_pert = song.copy()
         ts = np.linspace(0, T, endpoint=False, num=len(song)) # ms
         pert_t0 = t0[pert_syl_idx] - t0[0]
         pert_t1 = min(pert_t0+100, t1[pert_syl_idx]-t0[0])
         mask = (ts >= pert_t0) & (ts < pert_t1)
-        song_pert[mask] += rng.normal(0, 5e4, size=mask.sum())
-        spec_song_pert.append(get_spec(song_pert, fs, **song_kwargs))
+        song_pert = (song.copy(), song.copy())
+        song_pert[0][mask] += rng.normal(0, 5e3, size=mask.sum())
+        song_pert[1][mask] += rng.normal(0, 5e4, size=mask.sum())
+        spec_song_weak_pert.append(get_spec(song_pert[0], fs, **song_kwargs))
+        spec_song_strong_pert.append(get_spec(song_pert[1], fs, **song_kwargs))
 
         # syl spectra
         li = []
@@ -88,19 +91,24 @@ for f in NOTE_FILES:
         spec_syl.append(np.stack(li, axis=0))
 
         # syl spectra, with perrturbation
-        syl = song_pert[t0_[pert_syl_idx]-t0_[0]:t1_[pert_syl_idx]-t0_[0]]
-        spec_syl_pert.append(get_spec(syl, fs, **syl_kwargs))
+        syl = song_pert[0][t0_[pert_syl_idx]-t0_[0]:t1_[pert_syl_idx]-t0_[0]]
+        spec_syl_weak_pert.append(get_spec(syl, fs, **syl_kwargs))
+        syl = song_pert[1][t0_[pert_syl_idx]-t0_[0]:t1_[pert_syl_idx]-t0_[0]]
+        spec_syl_strong_pert.append(get_spec(syl, fs, **syl_kwargs))
 
 print('Found %d songs.' % len(spec_song))
 # make into np arrays
 # (num_samples, *, num_freq_bins, num_time_bins)
 # for spec_syl, * is num_syl = 7
-_ = (spec_song, spec_song_pert, spec_syl, spec_syl_pert, syl_on, syl_off, song_Ts)
+_ = (spec_song, spec_song_weak_pert, spec_song_strong_pert, spec_syl, 
+     spec_syl_weak_pert, spec_syl_strong_pert, syl_on, syl_off, song_Ts)
 _ = list(map(lambda x: np.stack(x, axis=0), _))
-spec_song, spec_song_pert, spec_syl, spec_syl_pert = _[:4]
-syl_on, syl_off, song_Ts = _[4:]
+spec_song, spec_song_weak_pert, spec_song_strong_pert = _[:3]
+spec_syl, spec_syl_weak_pert, spec_syl_strong_pert = _[3:6]
+syl_on, syl_off, song_Ts = _[6:]
 
 np.savez('../adult_songs/data.npz', 
          fs=fs, pert_syl_idx=pert_syl_idx,
-         spec_song=spec_song, spec_song_pert=spec_song_pert, spec_syl=spec_syl, 
-         spec_syl_pert=spec_syl_pert, syl_on=syl_on, syl_off=syl_off, song_Ts=song_Ts)
+         spec_song=spec_song, spec_song_pert=(spec_song_weak_pert, spec_song_strong_pert), 
+         spec_syl=spec_syl, spec_syl_pert=(spec_syl_weak_pert, spec_syl_strong_pert), 
+         syl_on=syl_on, syl_off=syl_off, song_Ts=song_Ts)

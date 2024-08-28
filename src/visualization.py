@@ -119,9 +119,8 @@ def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end,
                           interpolation='antialiased', norm=norm)
         ax[i].spines.top.set_visible(True)
         ax[i].spines.right.set_visible(True)
-        ax[i].axvline(tpre, ls='--', c='k', lw=2)
-        ax[i].set(yticks=[], xlabel='Time', 
-                  xticks=[tpre, 250], xticklabels=['song\nonset', 250])
+        ax[i].axvline(tpre, ls='--', c='cyan', lw=2)
+        ax[i].set(yticks=[], xlabel='Time')
         ax[i].set_title(test_names[i], fontsize=10)
         
     ax[0].set_yticks([0, N-1], [1, N], rotation=90)
