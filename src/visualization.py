@@ -4,34 +4,6 @@ import matplotlib.pyplot as plt
 from utils import *
 from matplotlib.colors import TwoSlopeNorm, Normalize
 
-def plot_wcol_corr(Ws, syl, figdim, figsize, sort=False):
-    ''' Plot the correlation between columns of W and syllabi
-    '''
-    if issparse(Ws[0]):
-        Ws = [_.toarray() for _ in Ws]
-    corrs = [correlation(_.T, syl, dim=2) for _ in Ws]
-    if sort:
-        idx = np.argsort(np.nanargmin(corrs[-1], axis=1))
-        corrs = [_[idx,:] for _ in corrs]
-    
-    N_syl, N = syl.shape[0], Ws[0].shape[1]
-    xticks = np.arange(N_syl)
-    xticklabels = list(map(chr, range(65, 65+N_syl))) # 65 is A and 97 is a
-    
-    fig, ax = plt.subplots(*figdim, sharex='all', sharey='all', figsize=figsize)
-    ax = ax.flatten()
-    l = min(len(corrs), len(ax))
-    idx = np.round(np.linspace(0, len(corrs)-1, num=l, endpoint=True)).astype('int')
-    for i, j in enumerate(idx):
-        im = ax[i].imshow(corrs[j], vmax=1, vmin=-1, cmap='seismic', aspect='auto', 
-                          extent=(-0.5, N_syl-0.5, N, 1), interpolation='none')
-        ax[i].set_title('Rendition %d' % j, fontsize=10)
-        ax[i].set(xticks=xticks, xticklabels=xticklabels)
-    ax[0].set_yticks([1,N])
-    fig.colorbar(im, ax=ax)
-    # fig.suptitle(r'Corr(col$_i$W , $\vec\xi_j$)')
-    return fig, ax
-    
 def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
     ''' Plot some training stats
     '''
@@ -67,26 +39,6 @@ def plot_train_converge(Ws, W_syl_corrs, save_W_ts, rE, r_target):
     ax[2].set(ylabel=r'$\left\langle |r^E - r^E_0| \right\rangle$', yscale='log')
     return fig, ax
 
-def plot_example_colW_syl(Ws, syl, i, rend_id):
-    ''' visualize columns of W and sylabus patterns
-    i: i-th HVC
-    rend_id: indices of Ws to plot
-    '''
-    idx = np.argsort(syl)[::-1]
-    
-    fig, ax = plt.subplots(1, len(rend_id)+1, sharex='all', sharey='all',
-                           figsize=(0.8*(len(rend_id)+1), 1.6))
-    ax[0].imshow(syl[idx][:,None], aspect='auto', cmap='seismic')
-    ax[0].set(xticks=[], yticks=[0, len(Ws[0])-1], yticklabels=[1, len(Ws[0])], 
-              ylabel='E neuron index\n(sorted)')
-    ax[0].set_title('Syl. A', fontsize=10)
-    fig.text(0.45, 1, 'Input weights from\nHVC neuron %d' % (i + 1), 
-             fontsize=10, ha='left', va='top')
-    for j, r in enumerate(rend_id):
-        ax[j+1].imshow(Ws[r][idx,i:i+1], aspect='auto', cmap='seismic')
-        ax[j+1].set_xlabel('Rend.' + str(r), fontsize=10)
-    fig.tight_layout()
-    return fig, ax
 
 def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end, 
                              plot_z=False, sort_by='e', th=5,
@@ -147,6 +99,40 @@ def plot_tests_mean(rEs, rIs, test_names, ti, tj, plot_inh=True):
     fig.tight_layout()
     return fig, ax
 
+def plot_corr_mat(Ws, ctrl, pert=None, sortby=None, vmin=-1, vmax=1, **ax0kwargs):
+    ''' Plot the correlation between weights and song patterns
+    Ws: matrix with shape (NE, NE or NI); can be sparse matrix
+    ctrl, pert: control and perturbed patterns to compare, must have shape (*, NE)
+    sortby: If None, no sorting; if `max` or `min`, sort by the max or min correlations 
+            along the horizontal axis
+    '''
+    Ws = [Ws[0].toarray(), Ws[-1].toarray()] if issparse(Ws[0]) else [Ws[0], Ws[-1]]
+    
+    corrs = [correlation(w.T, ctrl, dim=2) for w in Ws]
+    if pert is not None:
+        corrs += [correlation(Ws[-1].T, pert, dim=2)]
+        
+    if sortby == 'min':
+        idx = np.argsort(np.nanargmin(corrs[1], axis=1))
+    elif sortby == 'max':
+        idx = np.argsort(np.nanargmax(corrs[1], axis=1))
+        
+    fig, ax = plt.subplots(1, len(corrs), sharey='all', figsize=(6, 2))
+    for i, j in enumerate(corrs):
+        im = j if sortby is None else j[idx,:]
+        im = ax[i].imshow(im, aspect='auto', interpolation='none', 
+                          vmin=vmin, vmax=vmax, cmap='seismic')
+    ax[0].set_title('Before learning, corr. with\ncorrect song')
+    if pert is not None:
+        ax[1].set_title('\ncorrect song')
+        ax[2].set_title('\nperturbed song')
+        fig.text(0.45, 0.92, 'After learning, corr. with')
+    else:
+        ax[1].set_title('After learning, corr. with\ncorrect song')
+    ax[0].set(**ax0kwargs)
+    cax = fig.colorbar(im, ax=ax, label='Correlation', ticks=[vmin, 0, vmax])
+    return fig, ax
+    
 def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
                      syl_order=dict(), y=0.9, cosine=False):
     ''' Correlations with syls and errors over time

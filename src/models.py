@@ -89,6 +89,10 @@ class EINet(WCNet):
             Ws['HVC'] = [self.W.copy()]
         if 'JEE' in lr.keys():
             Ws['JEE'] = [self.JEE.copy()]
+        if 'JEI' in lr.keys():
+            Ws['JEI'] = [self.JEI.copy()]
+        if 'JIE' in lr.keys():
+            Ws['JIE'] = [self.JIE.copy()]
 
         for t in tqdm(range(1, T), disable=no_progress_bar):
             aux = self.W @ rH[t-1] - self.w_inh * rH[t-1].sum()
@@ -110,12 +114,17 @@ class EINet(WCNet):
             
             if len(plasticity) > 0:
                 for k, f in plasticity.items():
-                    f(self, t, rE, rH, lr[k], **plasticity_args)
+                    pre = rH if k=='HVC' else rI
+                    f(self, t, rE, pre, lr[k], **plasticity_args)
             if t in save_W_ts:
                 if 'HVC' in lr.keys():
                     Ws['HVC'].append(self.W.copy())
                 if 'JEE' in lr.keys():
                     Ws['JEE'].append(self.JEE.copy())
+                if 'JEI' in lr.keys():
+                    Ws['JEI'].append(self.JEI.copy())
+                if 'JIE' in lr.keys():
+                    Ws['JIE'].append(self.JIE.copy())
         
         return rE, rI, Ws, mean_HVC_input, recE
 
@@ -140,15 +149,41 @@ def bilin_hebb_E_HVC(net, t, rE, rH, lr, tauW, asyn_H, rE_th, **kwargs):
         dW = lr * (rE[t,:,None] - rE_th) * rH[None,:] - (net.W - net.w0_mean)
         net.W = np.clip(net.W + dW / tauW, a_min=1e-10, a_max=None)
         
-def bilin_hebb_EE(net, t, rE, _, lr, J0_mean, tauW, asyn_E, rE_th, **kwargs):
+def bilin_hebb_EE(net, t, rE, _, lr, JEE0_mean, tauW, asyn_E, rE_th, **kwargs):
     ## lr < 0, anti-Hebbian
     rE_post, rE_pre = rE[t], rE[max(t-asyn_E,0)]
     if issparse(net.JEE):
         aux = np.zeros(net.JEE.data.shape)
         _outer(aux, rE_post - rE_th, rE_pre, net.JEE.indptr, net.JEE.indices)
-        dW = lr * aux - (net.JEE.data - J0_mean)
+        dW = lr * aux - (net.JEE.data - JEE0_mean)
         net.JEE.data = np.clip(net.JEE.data + dW / tauW, a_min=1e-10, a_max=None)
     else:
         aux = (rE_post[:,None] - rE_th) * rE_pre[None,:]
-        dW = lr * aux - (net.JEE - J0_mean)
+        dW = lr * aux - (net.JEE - JEE0_mean)
         net.JEE = np.clip(net.JEE + dW / tauW, a_min=1e-10, a_max=None)
+
+def bilin_hebb_IE(net, t, rE, rI, lr, JIE0_mean, tauW, asyn_E, rE_th, rI_th, **kwargs):
+    ## lr < 0, anti-Hebbian
+    rI_post, rE_pre = rI[t], rE[max(t-asyn_E,0)]
+    if issparse(net.JIE):
+        aux = np.zeros(net.JIE.data.shape)
+        _outer(aux, rI_post - rI_th, rE_pre - rE_th, net.JIE.indptr, net.JIE.indices)
+        dW = lr * aux - (net.JIE.data - JIE0_mean)
+        net.JIE.data = np.clip(net.JIE.data + dW / tauW, a_min=1e-10, a_max=None)
+    else:
+        aux = (rI_post[:,None] - rI_th) * (rE_pre[None,:] - rE_th)
+        dW = lr * aux - (net.JIE - JIE0_mean)
+        net.JIE = np.clip(net.JIE + dW / tauW, a_min=1e-10, a_max=None)
+        
+def bilin_hebb_EI(net, t, rE, rI, lr, JEI0_mean, tauW, asyn_I, rE_th, **kwargs):
+    ## lr < 0, anti-Hebbian
+    rE_post, rI_pre = rE[t], rI[max(t-asyn_I,0)]
+    if issparse(net.JEI):
+        aux = np.zeros(net.JEI.data.shape)
+        _outer(aux, rE_post - rE_th, rI_pre, net.JEI.indptr, net.JEI.indices)
+        dW = lr * aux - (net.JEI.data - JEI0_mean)
+        net.JEI.data = np.clip(net.JEI.data + dW / tauW, a_min=1e-10, a_max=None)
+    else:
+        aux = (rE_post[:,None] - rE_th) * rI_pre[None,:]
+        dW = lr * aux - (net.JEI - JEI0_mean)
+        net.JEI = np.clip(net.JEI + dW / tauW, a_min=1e-10, a_max=None)

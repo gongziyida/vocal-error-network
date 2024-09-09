@@ -9,7 +9,7 @@ from scipy.io import loadmat, wavfile
 rng = np.random.default_rng()
 NOTE_FILES = glob.glob('../adult_songs_raw/*/*.not.mat')
 CODE = 'iabcde'
-pert_syl_idx = 3
+pert_syl_idx = 2
 print('Found %d files.' % len(NOTE_FILES))
 
 def get_spec(audio, fs, max_dur, min_freq, max_freq, num_freq_bins, num_time_bins, 
