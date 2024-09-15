@@ -31,7 +31,7 @@ syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
 tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC)
 
 _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
-rH = generate_HVC(T, burst_ts, peak_rate+_*0.1, kernel_width+_*0.01)
+rH = generate_HVC(T, burst_ts, peak_rate+_*0, kernel_width+_*0)
 
 aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
 
@@ -51,7 +51,6 @@ JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5
 JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
 JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
 JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
-J0_mean = JEE0 / np.sqrt(NE) * c
 
 rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
 phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
@@ -71,7 +70,7 @@ plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC),
 _ = EInet.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
 
 plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-2e-1), 
-                         tauW=1e5, J0_mean=J0_mean, asyn_E=10, rE_th=1)
+                         tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
 _ = EIrec.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
 
 
@@ -125,7 +124,7 @@ for i, K in enumerate(Ks):
     EIrec_zs.append((zEIrec[T_burn:,:K].mean(), zEIrec[T_burn:,K:].mean()))
     
 FF_sparsity, EI_sparsity, EIrec_sparsity = dict(), dict(), dict()
-for th in (1, 2, 3):
+for th in (1, 3, 5):
     FF_sparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), FF_res['rE'])))
     EI_sparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), EI_res['rE'])))
     EIrec_sparsity[th] = np.vstack(list(map(lambda x: (x[T_burn:] > th).mean(axis=1), EIrec_res['rE'])))

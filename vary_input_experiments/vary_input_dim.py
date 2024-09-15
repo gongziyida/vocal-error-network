@@ -27,7 +27,7 @@ T = T_burn + N_rend * T_rend # Total
 tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC)
 
 _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
-rH = generate_HVC(T, burst_ts, peak_rate+_*0.1, kernel_width+_*0.01)
+rH = generate_HVC(T, burst_ts, peak_rate+_*0, kernel_width+_*0)
 
 w0_mean, w0_mean_EIrec, cW_EIrec = 1/N_HVC, 1/N_HVC, 0.05
 w_inh, w_inh_EIrec, wI = w0_mean, w0_mean_EIrec*cW_EIrec, 0.0
@@ -44,7 +44,6 @@ JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5
 JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
 JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
 JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
-J0_mean = JEE0 / np.sqrt(NE) * c
 
 rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
 phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
@@ -60,7 +59,7 @@ phi = lambda x: rmax/2 * (1 + erf((x - th) / (np.sqrt(2) * s)))
 Ks = np.array([5, 10, 20, 40, 60, 100])
 
 FF_pwcorrs, EI_pwcorrs, EIrec_pwcorrs = [], [], []
-FF_sparsity, EI_sparsity, EIrec_sparsity = [{i: [] for i in (1, 2, 3)} for _ in range(3)]
+FF_sparsity, EI_sparsity, EIrec_sparsity = [{i: [] for i in (1, 3, 5)} for _ in range(3)]
 for K in Ks:
     FFnet = WCNet(NE, N_HVC, w0_mean, phi, tauE, w_inh=w_inh)
     EInet = EINet(NE, NI, N_HVC, w0_mean, phiE, phiI, tauE, tauI, 
@@ -85,7 +84,7 @@ for K in Ks:
                              lr=dict(HVC=-8e-2), tauW=1e5, asyn_H=0, rE_th=1)
     _ = EInet.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
     plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-2e-1), 
-                             tauW=1e5, J0_mean=J0_mean, asyn_E=10, rE_th=1)
+                             tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
     _ = EIrec.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
 
     # Test with perturbation
@@ -110,7 +109,7 @@ for K in Ks:
     EIrec_pwcorrs.append(correlation(EIrec_mean.T, EIrec_mean.T, dim=2))
     
     # sparsity
-    for th in (1, 2, 3):
+    for th in (1, 3, 5):
         FF_sparsity[th].append((FF_res[0][T_burn:] > th).mean(axis=1))
         EI_sparsity[th].append((EI_res[0][T_burn:] > th).mean(axis=1))
         EIrec_sparsity[th].append((EIrec_res[0][T_burn:] > th).mean(axis=1))

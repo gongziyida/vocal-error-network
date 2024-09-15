@@ -42,7 +42,6 @@ JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5
 JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
 JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
 JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
-J0_mean = JEE0 / np.sqrt(NE) * c
 
 rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
 phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
@@ -59,7 +58,7 @@ netEIrec = EINet(NE, NI, N_HVC, w0_mean_E2E, phiE, phiI, tauE, tauI,
 hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
 hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
 plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-2e-1), 
-                         tauW=1e5, J0_mean=J0_mean, asyn_E=10, rE_th=1)
+                         tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
 train_res = netEIrec.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 0, **plasticity_kwargs)
 
 #### process connectivity matrix and SVD ####
@@ -142,7 +141,7 @@ def response(nets, var_dir, a_range, n_points):
 
 
 #### Simulations ####
-song_range, other_range = (-1, 2), (-1, 1)
+song_range, other_range = (-0.25, 1.25), (-1, 1)
 res_onm = dict(rate=[]) # on-manifold variation
 res_offm = dict(rate=[], pert=[]) # off-manifold variation
 J_disr_corrs = []
