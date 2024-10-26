@@ -1,9 +1,11 @@
 import numpy as np
 from numba import njit, void, f8, i4
 from scipy.stats import norm
+from scipy.special import erf
 from scipy.sparse import random as srandom
 from scipy.sparse import issparse
 from tqdm import tqdm
+
 
 # E: Eiv; H: HVC; I: local inhibitory interneuron
 class WCNet: # Wilson-Cowan
@@ -28,14 +30,19 @@ class WCNet: # Wilson-Cowan
                 print('Not a recurrent model and rI will not be calculated.')
         self.JEE, self.JEI, self.JIE, self.JII = JEE, JEI, JIE, JII
 
+    @staticmethod
+    def phi(x, rmax, th, slope):
+        return rmax/2 * (1 + erf((x - th) / (np.sqrt(2) * slope)))
+
     def sim(self, hE0, rH, aud, save_W_ts, T, dt, noise_strength, 
             plasticity=None, lr=0, hI0=0, no_progress_bar=False, **plasticity_args):
         rng = np.random.default_rng()
         rE = np.zeros((T, self.NE))
         rI = np.zeros(T) # rI is already mean in WC model
-        hE, hI = np.zeros(self.NE)+hE0, hI0
-        rE[0] = self.phiE(hE0)
-        rI[0] = self.phiE(hI0)
+        hE, hI = np.zeros(self.NE) + hE0, hI0
+        rE[0] = WCNet.phi(hE0, *self.phiE)
+        if self.phiI is not None:
+            rI[0] = WCNet.phi(hI0, *self.phiI)
 
         Ws = [self.W.copy()]
         mean_HVC_input = np.zeros(T)
@@ -53,18 +60,19 @@ class WCNet: # Wilson-Cowan
                 
                 dI = -hI + recI + self.wI * rH[t-1].mean()
                 hI += dI * dt / self.tauI
-                rI[t] = self.phiE(hI)
+                if self.phiI is not None:
+                    rI[t] = WCNet.phi(hI, *self.phiI)
                 
             dE = -hE + aux + aud[t-1] + recE + noise
             hE += dE * dt / self.tauE
-            rE[t] = self.phiE(hE)
+            rE[t] = WCNet.phi(hE, *self.phiE)
             
             if lr != 0:
                 plasticity(self, t, rE, rH, lr, **plasticity_args)
             if t in save_W_ts:
                 Ws.append(self.W.copy())
         
-        return rE, rI, Ws, mean_HVC_input
+        return rE, rI, Ws, hE, hI
         
 class EINet(WCNet):
     def __init__(self, NE, NI, NH, w0_mean, phiE, phiI, tauE, tauI,
@@ -80,8 +88,8 @@ class EINet(WCNet):
         recE = np.zeros((T, self.NE))
         rI = np.zeros((T, self.NI))
         hE, hI = np.zeros(self.NE) + hE0, np.zeros(self.NI) + hI0
-        rE[0] = self.phiE(hE)
-        rI[0] = self.phiE(hI)
+        rE[0] = EINet.phi(hE0, *self.phiE)
+        rI[0] = EINet.phi(hI0, *self.phiI)
 
         mean_HVC_input = np.zeros(T)
         Ws = dict()
@@ -109,8 +117,8 @@ class EINet(WCNet):
             dI = -hI + recI + self.wI * rH[t-1].mean() + noiseI
             hE += dE * dt / self.tauE
             hI += dI * dt / self.tauI
-            rE[t] = self.phiE(hE)
-            rI[t] = self.phiE(hI)
+            rE[t] = EINet.phi(hE, *self.phiE)
+            rI[t] = EINet.phi(hI, *self.phiI)
             
             if len(plasticity) > 0:
                 for k, f in plasticity.items():
@@ -126,7 +134,7 @@ class EINet(WCNet):
                 if 'JIE' in lr.keys():
                     Ws['JIE'].append(self.JIE.copy())
         
-        return rE, rI, Ws, mean_HVC_input, recE
+        return rE, rI, Ws, hE, hI
 
 
 #### Plasticity functions ####

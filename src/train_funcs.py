@@ -207,4 +207,4 @@ def load_models(folder, aud_map_type, rec_plasiticity, hvc_cond, tid):
             (aud_map_type, rec_plasiticity, hvc_cond, str(tid))
     with open(os.path.join(folder, fname), 'rb') as f:
         d = pickle.load(f)
-    return d['FF'], d['EI'], d['EIrec'], d['mapping']
+    return d['FF'], d['EI-HVC2E'], d['EI-E2E'], d['EI-E2I2E'], d['mapping']
