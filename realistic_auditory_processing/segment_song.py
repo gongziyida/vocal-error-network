@@ -7,13 +7,13 @@ from scipy.signal import stft
 from scipy.io import loadmat, wavfile
 
 rng = np.random.default_rng()
-NOTE_FILES = glob.glob('../adult_songs_raw/*/*.not.mat')
+NOTE_FILES = glob.glob('../adult_songs_raw/*/R*.not.mat')
 CODE = 'iabcde'
 pert_syl_idx = 2
 print('Found %d files.' % len(NOTE_FILES))
 
 def get_spec(audio, fs, max_dur, min_freq, max_freq, num_freq_bins, num_time_bins, 
-             spec_min, spec_max, nperseg=512, noverlap=256, l_pad=None, r_pad=None):
+             spec_min, spec_max, nperseg=1024, noverlap=512, l_pad=None, r_pad=None):
     T = len(audio) / fs # total time
     audio = audio - np.mean(audio) # remove dc component
     f, t, spec = stft(audio, fs=fs, nperseg=nperseg, noverlap=noverlap)
@@ -42,9 +42,9 @@ def get_spec(audio, fs, max_dur, min_freq, max_freq, num_freq_bins, num_time_bin
 spec_song, spec_song_weak_pert, spec_song_strong_pert = [], [], []
 spec_syl, spec_syl_weak_pert, spec_syl_strong_pert = [], [], []
 syl_on, syl_off, song_Ts = [], [], []
-song_kwargs = dict(min_freq=1e3, max_freq=8e3, num_freq_bins=50, spec_min=4, spec_max=8, 
+song_kwargs = dict(min_freq=1e3, max_freq=8e3, num_freq_bins=50, spec_min=3.5, spec_max=8, 
                    num_time_bins=80, max_dur=1.1, l_pad=0, r_pad=0)
-syl_kwargs = dict(min_freq=1e3, max_freq=8e3, num_freq_bins=50, spec_min=4, spec_max=8, 
+syl_kwargs = dict(min_freq=1e3, max_freq=8e3, num_freq_bins=50, spec_min=3.5, spec_max=8, 
                   num_time_bins=20, max_dur=0.2)
 for f in NOTE_FILES:
     notes = loadmat(f)

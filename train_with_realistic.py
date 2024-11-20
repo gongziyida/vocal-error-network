@@ -57,7 +57,11 @@ aud, _ = generate_realistic_aud(aud_real['ctrl'], N_rend, T_burn, T_post)
 _ = np.arange(N_rend)
 # (N_HVC, N_rend)
 burst_ts = np.linspace(_*T_rend+T_burn, _*T_rend+T_burn+T_song, num=N_HVC, endpoint=False)
-save_W_ts = np.round(burst_ts[-1]+KERNEL_WIDTH).astype(int)
+# save_W_ts = np.round(burst_ts[-1]+KERNEL_WIDTH).astype(int)
+save_W_ts = np.concatenate((np.linspace(0, burst_ts[-1,0], endpoint=False, num=7)[1:], 
+                            np.round(burst_ts[-1]+KERNEL_WIDTH)))
+save_W_ts = save_W_ts.astype(int)
+save_W_trial_num = [i/8 for i in range(7)] + [i for i in range(1, N_rend + 1)]
 
 if HVC_COND == 'mature_hvc':
     _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
@@ -80,7 +84,7 @@ elif HVC_COND == 'developing_hvc':
     for i, j in enumerate(js):
         ax[i].plot(rH[T_burn+j*T_rend:T_burn+(j+1)*T_rend-T_post])
         ax[i].set_title('rend%d' % (j+1), fontsize=12)
-    ax[0].set(xlabel='Time (ms)', ylabel='HVC rates (Hz)')
+    ax[0].set(xlabel='time (ms)', ylabel='premotor rates (Hz)')
     fig.savefig(os.path.join(IMG_DIR, 'supplementary/HVC_development.svg'))
 else:
     raise NotImplementError
@@ -88,19 +92,21 @@ else:
 ### Initialize recurrent weights
 gen = lognormal_gen
 c = 0.5
-JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.3, 1.8]) / 5
+# JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.3, 1.8]) / 5
+srKEc, srKIc = np.sqrt(NE*c), np.sqrt(NI*c)
+JEE0, JEI0, JIE0, JII0 = np.array([1/srKEc, 1.7/srKIc, 1/srKEc, 1.5/srKIc]) / 10
 sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.1
-JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True) / np.sqrt(NE)
-JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True) / np.sqrt(NI)
-JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True) / np.sqrt(NE)
-JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True) / np.sqrt(NI)
+JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True)
+JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True)
+JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True)
+JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
 
 ## Initialize networks
 ### FF and EI (HVC->E)
-w0_mean_HVC2E, w0_std_HVC2E, cW_HVC2E = 0.01/N_HVC, 0, 1
+w0_mean_HVC2E, w0_std_HVC2E, cW_HVC2E = 0.1/N_HVC, 1e-2, 1
 
-netFF = WCNet(NE, N_HVC, w0_mean_HVC2E, (rEmax, thFF, slope), tauE, w0_std=w0_std_HVC2E)
-netEI = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+netFF = WCNet(NE, N_HVC, w0_mean_HVC2E, (rEmax, thFF+3, slope), tauE, w0_std=w0_std_HVC2E)
+netEI = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE+3, slope), (rImax, thI, slope), tauE, tauI, 
               JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
               w0_std=w0_std_HVC2E, cW=cW_HVC2E)
 
@@ -120,31 +126,31 @@ hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
 hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
 ### Train FF
 plasticity_kwargs = dict(plasticity=bilin_hebb_E_HVC, lr=-3e-2, 
-                         tauW=1e5, asyn_H=0, rE_th=1)
+                         tauW=1e5, asyn_H=10, rE_th=1.5)
 rE, rI, Ws_FF, _, _ = netFF.sim(hE0, rH, aud, save_W_ts, T, dt, 1, **plasticity_kwargs)
 
 ### Train EI (HVC->E)
 plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), lr=dict(HVC=-3e-2), 
-                         tauW=1e5, asyn_H=0, rE_th=1)
+                         tauW=1e5, asyn_H=10, rE_th=1.5)
 rE, rI, Ws_EI, _, _ = netEI.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 1, 
                                 **plasticity_kwargs)
 
 #### Plot correlations between weights and auditory patterns
 fig, ax = plot_corr_mat(Ws_FF, aud_real['ctrl'].mean(axis=0).T, 
                         aud_real['pert_strong'].mean(axis=0).T,
-                        ylabel='HVC index', yticks=[5, 10], xlabel='Time (ms)')
+                        ylabel='premotor index', yticks=[5, 10], xlabel='time (ms)')
 fig.savefig(os.path.join(IMG_DIR, 'supplementary/FF_learn_res_%s.svg' % HVC_COND))
 fig, ax = plot_corr_mat(Ws_EI['HVC'], aud_real['ctrl'].mean(axis=0).T, 
                         aud_real['pert_strong'].mean(axis=0).T,
-                        ylabel='HVC index', yticks=[5, 10], xlabel='Time (ms)')
+                        ylabel='premotor index', yticks=[5, 10], xlabel='time (ms)')
 fig.savefig(os.path.join(IMG_DIR, 'supplementary/EI_learn_res_%s.svg' % HVC_COND))
 
 #### Plot example neuron and HVC weights during training
 rends = (0, 10, 25)
 # Pick the one that fires at the perturbation time window
-HVC_idx = np.where((burst_ts[:,-1] > PERT_T0+T_burn) & (burst_ts[:,-1] < PERT_T1+T_burn))[0]
+HVC_idx = np.where((burst_ts[:,0] > PERT_T0+T_burn) & (burst_ts[:,0] < PERT_T1+T_burn))[0]
 _ = [rE[T_burn+j*T_rend:T_burn+(j+1)*T_rend-T_post].mean(axis=0) for j in rends]
-neuron_idx = rng.choice(np.where((_[0]>_[1]+0.5)&(_[1]>_[2]+0.5))[0]) # Example neuron idx
+neuron_idx = rng.choice(np.where((_[0]>_[1]+0.1)&(_[1]>_[2]+0.1))[0]) # Example neuron idx
 
 fig, ax = plt.subplots(2, 3, figsize=(4, 2), sharey='row', sharex='row', 
                        height_ratios=[1, 2])
@@ -160,25 +166,25 @@ for c, j in enumerate(rends):
 ax[0,0].plot([-75, -75], [0, 15], c='k', lw=2)
 ax[0,0].text(-150, 0, '15 Hz', va='bottom', ha='center', rotation=90)
 ax[0,0].text(-400, 0, 'Exc. rate', va='bottom', ha='center', rotation=90)
-ax[1,0].set(yticks=[-3, 0, 3], ylabel='HVC weights')
+ax[1,0].set(yticks=[-3, 0, 3], ylabel='premotor weights')
 ax[1,1].set_xlabel('auditory input patterns of tutor song')
 fig.savefig(os.path.join(IMG_DIR, 'training_res_%s.svg' % HVC_COND))
 
 ### Train EI (E->E plasticity)
 plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-5e-2),
-                         tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
+                         tauW=1e5, JEE0_mean=JEE0, asyn_E=10, rE_th=1.5)
 rE, rI, Ws_EIrecEE, _, _ = netEIrecEE.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 1, 
                                           **plasticity_kwargs)
     
 ### Train EI (E->I->E or I->E plasticity)
 if ALT_REC_PLASTICITY == 'EI':
     plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI), lr=dict(JEI=5e-2), tauW=1e5, 
-                             JEI0_mean=JEI0/np.sqrt(NI), asyn_I=10, rE_th=1)
+                             JEI0_mean=JEI0, asyn_I=10, rE_th=1.5)
 elif ALT_REC_PLASTICITY == 'EIIE':
     plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI,JIE=bilin_hebb_IE), 
-                             lr=dict(JEI=5e-2,JIE=5e-3), tauW=1e5, 
-                             JEI0_mean=JEI0/np.sqrt(NI), JIE0_mean=JIE0/np.sqrt(NE), 
-                             asyn_E=10, asyn_I=0, rE_th=1, rI_th=5)
+                             lr=dict(JEI=5e-2,JIE=6e-3), tauW=1e5, 
+                             JEI0_mean=JEI0, JIE0_mean=JIE0, 
+                             asyn_E=10, asyn_I=0, rE_th=1.5, rI_th=5)
 rE, rI, Ws_EIrecEI, _, _ = netEIrecEI.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 1, 
                                           **plasticity_kwargs)
 
@@ -187,7 +193,7 @@ for name, Ws_EIrec, (k, b) in zip(('EE', ALT_REC_PLASTICITY), (Ws_EIrecEE, Ws_EI
                                   (('JEE', 'min'), ('JEI', 'max'))):
     fig, ax = plot_corr_mat(Ws_EIrec[k], aud_real['ctrl'].mean(axis=0).T, 
                             aud_real['pert_strong'].mean(axis=0).T, sortby=b, 
-                            ylabel='presyn. neuron index', xlabel='Time (ms)')
+                            ylabel='presyn. neuron index', xlabel='time (ms)')
     fig.savefig(os.path.join(IMG_DIR, 'EIrec_learn_res_%s.svg' % (name + HVC_COND)))
 
 #### Plot correlations between weights and auditory patterns before and after learning
@@ -208,10 +214,10 @@ for i, c in enumerate(('k', 'grey')):
                widths=0.3, flierprops=dict(ms=2, mec=c), 
                boxprops=dict(color=c), capprops=dict(color=c),
                whiskerprops=dict(color=c), medianprops=dict(color=c))
-ax.plot(0, 0, c='k', label='with HVC input')
-ax.plot(0, 0, c='grey', label='without HVC input')
+ax.plot(0, 0, c='k', label='with premotor input')
+ax.plot(0, 0, c='grey', label='no premotor input')
 ax.plot()
-ax.legend(title='Neurons', alignment='left')
+ax.legend(title='Neurons', alignment='left', fontsize=10, title_fontsize=8)
 ax.set(xlim=[-0.5, 1.5], xticks=[0, 1], 
        xticklabels=['before learning', 'after learning'])
 ax.set_title('Correlation between E$\\to$E synaptic weights\nand tutor song pattern')
@@ -243,4 +249,4 @@ with open(os.path.join(RESULT_DIR, 'trained_models_%s_map_%s_%s_%s.pkl') % \
 ### Save EIrec weights
 with open(os.path.join(RESULT_DIR, 'EIrec_weights_evolve_%s_map_%s_%s_%s.pkl') % \
           (AUD_MAP_TYPE, ALT_REC_PLASTICITY, HVC_COND, TID), 'wb') as f:
-    pickle.dump((Ws_EIrecEE, Ws_EIrecEI), f)
+    pickle.dump((save_W_trial_num, {'E2E': Ws_EIrecEE, 'E2I': Ws_EIrecEI}), f)

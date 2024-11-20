@@ -1,175 +1,226 @@
 #!/usr/bin/env python
 # coding: utf-8
-import sys
+import sys, pickle
 sys.path.append('../src')
-import numpy as np
 from tqdm import tqdm
-from scipy.special import erf, erfinv
-from scipy.sparse import issparse
+import numpy as np
+from scipy.special import erf
+from scipy.linalg import svd
 from models import *
-from utils import *
 from train_funcs import *
+from utils import *
+from helper_funcs import *
+
+## Preparations
 rng = np.random.default_rng()
+IMG_DIR = 'svg/'
+RESULT_DIR = 'results/'
+REC_PLASTICITY, TID = sys.argv[1:3]
+AUD_MAP_TYPE = 'neighbor'
 
+### Constants
+NE, NI, N_HVC = 600, 150, 15
+PEAK_RATE, KERNEL_WIDTH = 150, 20
+tauE, tauI, dt = 30, 10, 1
 
-#### Model Training ####
-NE, NI, N_syl, N_HVC_per_syl = 600, 150, 3, 3
-N_HVC = N_syl * N_HVC_per_syl
-peak_rate, kernel_width = 150, 20
-T_rend = 600 # Each rendition
-N_rend = 25 # Number of renditions
+### EI transfer function parameters
+rEmax, rImax, thE, thI, slope = 100, 100, 0, 0, 2
+
+### Read and map auditory inputs
+fname = '../realistic_auditory_processing/learned_song_responses.npz'
+ma = 1/100 if AUD_MAP_TYPE=='discrete' else None
+aud_real, mapping = read_realistic_input(fname, NE, mean=0, scale=2, 
+                                         mapping=AUD_MAP_TYPE, mapping_args=ma)
+
+### Time window of perturbation
+PERT_T0 = int(np.round(aud_real['pert_t0'].min(), -1))
+PERT_T1 = int(np.round(aud_real['pert_t1'].max(), -1)) + 100
+
+### Constants related to time
+T_post = 200 # Silence after song
+T_song = aud_real['ctrl'].shape[2]
+T_rend = T_song + T_post # Each rendition
+N_rend = 35 # Number of renditions
 T_burn = 500 # Burning
 T = T_burn + N_rend * T_rend # Total
 
-# Syllables and time stamps
-N_shared_channels = 1
-syl_cov = block_sym_mat(NE, K=N_shared_channels, var=9, cov=7.5)
-syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
-tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_HVC)
-save_W_ts = np.round(tsyl_end[-1]).astype(int)
+### Generate auditory inputs and HVC firing for training
+aud, _ = generate_realistic_aud(aud_real['ctrl'], N_rend, T_burn, T_post)
+_ = np.arange(N_rend)
+# (N_HVC, N_rend)
+burst_ts = np.linspace(_*T_rend+T_burn, _*T_rend+T_burn+T_song, num=N_HVC, endpoint=False)
 
-_ = rng.standard_normal((N_HVC, N_rend)) * 0 # Little fluctuation
-rH = generate_HVC(T, burst_ts, peak_rate+_, kernel_width+_)
+save_W_ts = np.concatenate(([burst_ts[-1,0]//2], np.round(burst_ts[-1]+T_post+KERNEL_WIDTH)))
+save_W_ts = save_W_ts.astype(int)
 
-# (T, NE)
-aud = generate_discrete_aud(T, NE, tsyl_start, tsyl_end, syl)
+_ = np.zeros((N_HVC, N_rend))
+rH = generate_HVC(T, burst_ts, PEAK_RATE+_, KERNEL_WIDTH+_)
 
+### Initialize recurrent weights
 gen = lognormal_gen
 c = 0.5
-JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.2, 1.8]) / 4
+# JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.3, 1.8]) / 5
+srKEc, srKIc = np.sqrt(NE*c), np.sqrt(NI*c)
+JEE0, JEI0, JIE0, JII0 = np.array([1/srKEc, 1.7/srKIc, 1/srKEc, 1.5/srKIc]) / 10
 sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.1
-JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5) / np.sqrt(NE)
-JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
-JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
-JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
+JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True)
+JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True)
+JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True)
+JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
 
-rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
-phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
-phiI = lambda x: rImax/2 * (1 + erf((x - thI) / (np.sqrt(2) * sI)))
+## Initialize networks
+w0_mean, cW = 1/N_HVC, 0.05
 
-w0_mean_E2E, w0_std_E2E, cW_E2E = 1/N_HVC, 0, 0.05
-w_inh_E2E = w0_mean_E2E*cW_E2E
-tauE, tauI, dt = 30, 10, 1
+net = EINet(NE, NI, N_HVC, w0_mean, (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+            JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
+            w0_std=0, cW=cW)
 
-netEIrec = EINet(NE, NI, N_HVC, w0_mean_E2E, phiE, phiI, tauE, tauI, 
-                 JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
-                 w_inh=w_inh_E2E, w0_std=w0_std_E2E, cW=cW_E2E)
-
+## Training
 hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
 hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
-plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-2e-1), 
-                         tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
-train_res = netEIrec.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 0, **plasticity_kwargs)
+if REC_PLASTICITY == 'EE':
+    plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-5e-2),
+                             tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1.5)
+elif REC_PLASTICITY == 'EI':
+    plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI), lr=dict(JEI=5e-2), tauW=1e5, 
+                             JEI0_mean=JEI0/np.sqrt(NI), asyn_I=10, rE_th=1.5)
+elif REC_PLASTICITY == 'EIIE':
+    plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI,JIE=bilin_hebb_IE), 
+                             lr=dict(JEI=5e-2,JIE=6e-3), tauW=1e5, 
+                             JEI0_mean=JEI0, JIE0_mean=JIE0, 
+                             asyn_E=10, asyn_I=0, rE_th=1.5, rI_th=5)
+    
+train_res = net.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 1, **plasticity_kwargs)
 
-#### process connectivity matrix and SVD ####
-Js = []
-for j in train_res[2]['JEE']:
-    Js.append(np.block([[j.toarray(), -netEIrec.JEI.toarray()*2], 
-                       [netEIrec.JIE.toarray(), -netEIrec.JII.toarray()*2]]))
+## process connectivity matrix and SVD 
+if REC_PLASTICITY == 'EE':
+    Js = [get_J(net, JEE=wee.toarray()) for wee in train_res[2]['JEE']]
+elif REC_PLASTICITY == 'EI':
+    Js = [get_J(net, JEI=wei.toarray()) for wei in train_res[2]['JEI']]
+elif REC_PLASTICITY == 'EIIE':
+    Js = [get_J(net, JEI=wei.toarray(), JIE=wie.toarray()) 
+          for wei, wie in zip(train_res[2]['JEI'], train_res[2]['JIE'])]
 
-from scipy.linalg import svd
-svd_post = svd(Js[-1])
+svds = [svd(J) for J in Js]
 
+## Get syl patterns
+from scipy.signal import find_peaks
+syl = aud_real['ctrl'].mean(axis=0).T
+aux = np.abs(syl).mean(axis=1)
+syl = syl[find_peaks(aux)[0]]
 
-#### Test case constants ####
-T_test = T_burn + T_rend
-i_pert = 1
-ti, tj = int(tsyl_start[i_pert,0]), int(tsyl_end[i_pert,0])+100
-N_shuffle = 20
+## Find modes
+mem_enc, i_memory, i_nonmem = characterize_memory(svds, syl, 'left')
+i_landscape = [i for i in i_nonmem if (i != 0) and (i < 50) and (i not in i_memory)]
+i_others = [i for i in i_nonmem if (i != 0) and (i < 200) and (i not in i_landscape)]
 
-
-#### Helper functions ####
-def disrupt_conn(svd, idx_disrupt, shuff_I=False):
+## Helper functions
+def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
     ''' Shuffle selected left singular vectors (modes) and generate the disrupted network
-    svd: Output of scipy.linalg.svd
+    svds: Sequences of output of scipy.linalg.svd
     idx_disrupt: list of mode indices
-    shuff_I: if True, the entries corresponding to the inh. neurons will be shuffled;
-             otherwise, only those corresponding to the exc. neurons will be shuffled.
+    mode: `forget` (remove syllable patterns from singular vectors) or 
+          `shuffle` (shuffle singular vectors, assuming the resulting SVs are still orthogonal)
     '''
+    # the unaffected modes
     idx = [i for i in range(NE+NI) if i not in idx_disrupt]
-    J_trunc = svd[0][:,idx] @ np.diag(svd[1][idx]) @ svd[2][idx,:]
+    svd_post = svds[t1]
+    U, V = svd_post[0][:,idx_disrupt].copy(), svd_post[2][idx_disrupt,:].copy()
+    if mode == 'forget':
+        mem = syl / np.linalg.norm(syl, axis=1)[:,None]
+        mem_basis = svd(mem)[2][:mem.shape[0]]
+        U_mem_encode = ((mem_basis @ U[:NE])[:,None,:] * mem_basis[:,:,None]).sum(axis=0)
+        U[:NE] -= U_mem_encode
+        # V_mem_encode = ((V[:,:NE] @ mem_basis.T)[:,None,:] * mem_basis.T[None,:,:]).sum(axis=-1)
+        # V[:,:NE] -= V_mem_encode
+    elif mode == 'shuffle':
+        idx_shuff = np.arange(0, NE)
+        rng.shuffle(idx_shuff)
+        U[:NE] = U[idx_shuff]
+        # V[:,:NE] = V[:,idx_shuff]
     
-    # shuffle U and V, one mode at a time
-    U, V = np.zeros((NE+NI,len(idx_disrupt))), np.zeros((len(idx_disrupt),NE+NI))
-    for i, j in enumerate(idx_disrupt):
-        idxE, idxI = np.arange(NE), np.arange(NI)
-        rng.shuffle(idxE)
-        if shuff_I:
-            rng.shuffle(idxI)
-        idx = np.concat([idxE, idxI+NE])
-        U[:,i], V[i,:] = svd[0][idx,j], svd[2][j,idx]
-        
-    aux = U @ np.diag(svd[1][idx_disrupt]) @ V
-    J_disrupt = J_trunc + aux
-    
-    netEIrec_disrupt = EINet(NE, NI, N_HVC, w0_mean_E2E, phiE, phiI, tauE, tauI, 
-                             JEE=J_disrupt[:NE,:NE], JEI=-J_disrupt[:NE,NE:]/2, 
-                             JIE=J_disrupt[NE:,:NE], JII=-J_disrupt[NE:,NE:]/2, 
-                             w_inh=w_inh_E2E, w0_std=w0_std_E2E, cW=cW_E2E)
-    netEIrec_disrupt.W = netEIrec.W.copy()
+    U /= np.linalg.norm(U, axis=0)[None,:]
+    # V /= np.linalg.norm(V, axis=1)[:,None]
+    J_disrupt = svd_post[0][:,idx] @ np.diag(svd_post[1][idx]) @ svd_post[2][idx,:] \
+              + U @ np.diag(svd_post[1][idx_disrupt]) @ V
 
-    return netEIrec_disrupt, J_disrupt, J_trunc
+    net_disrupt = EINet(NE, NI, N_HVC, w0_mean, 
+                        (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+                        JEE=J_disrupt[:NE,:NE], JEI=-J_disrupt[:NE,NE:], 
+                        JIE=J_disrupt[NE:,:NE], JII=-J_disrupt[NE:,NE:], 
+                        w0_std=0, cW=cW)
+    net_disrupt.W = net.W.copy()
 
-def response(nets, var_dir, a_range, n_points):
-    ''' Probe the networks' responses to perturbations
+    return net_disrupt, J_disrupt
+
+
+def response(nets, var_dir, a_range=None, n_points=None, i_pert=3):
+    ''' Probe the networks' responses to perturbations. Return averaged response (nets, n_points, NE).
+    Parameters
+    ----------
     nets: list of EINet
     var_dir: Direction of variation. Either 'song' or 'other'.
-    a_range: 2-tuple containing the min and max of the scales `a` along the direction of variation
-    n_points: Number of `a` to test
+    a_range: 2-tuple containing the min and max of the scales `a` along the direction of variation, 
+             required if `var_dir='other'`.
+    n_points: Number of `a` to test, required if `var_dir='other'`.
     '''
-    bos = syl.copy()
-    a_vals = np.linspace(*a_range, num=n_points)
+    T_test = T_burn + T_rend
+    tsyl_start, tsyl_end = generate_syl_time(T_test, T_burn, T_rend, syl.shape[0], N_HVC)[:2]
+    
+    if var_dir == 'song':
+        a_vals = [1, 0] # song, deaf
+    else:
+        a_vals = np.linspace(*a_range, num=n_points)
+        step = mapping.shape[1] // mapping.shape[0]
+        pert = syl[i_pert].copy()#[::mapping.shape[1]//mapping.shape[0]]
+        rng.shuffle(pert)
+        # pert = pert @ mapping
+        bos = syl.copy()
+    
     li = [[] for _ in range(len(nets))]
     
     hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
-    hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
-    pert = rng.multivariate_normal(np.zeros(NE), syl_cov)
+    hI0 = rng.normal(loc=-1, scale=0.5, size=NI)    
     
     for a in a_vals:
         if var_dir == 'other':
-            bos[i_pert] = syl[i_pert] + pert * a
+            bos[i_pert] = syl[i_pert] * np.sqrt(1 - a**2) + pert * a
+            aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, bos)
         elif var_dir == 'song':
-            bos[i_pert] = syl[i_pert].mean() + (syl[i_pert]-syl[i_pert].mean()) * a
-            pert = None
+            aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, syl) * a
         
-        aud_test = generate_discrete_aud(T_test, NE, tsyl_start[:,:1], tsyl_end[:,:1], bos)
-        args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 0)
+        args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 1)
         for i, net in enumerate(nets):
-            li[i].append(net.sim(*args, no_progress_bar=True)[0][ti:tj].mean(axis=0))
+            aux = net.sim(*args, no_progress_bar=True)[0]
+            li[i].append(aux[T_burn:T_burn+T_song].mean(axis=0))
     
-    return [np.stack(i, axis=0) for i in li], pert
+    return np.stack([np.stack(i, axis=0) for i in li], axis=0)
 
 
-#### Simulations ####
-song_range, other_range = (-0.25, 1.25), (-1, 1)
-res_onm = dict(rate=[]) # on-manifold variation
-res_offm = dict(rate=[], pert=[]) # off-manifold variation
+## Testing
+pert_range = (0, 1)
+rate_onm = [] # on-manifold variation
+rate_offm = [] # off-manifold variation
 J_disr_corrs = []
 
-for i in tqdm(range(N_shuffle)):
-    net_disrupt_1, J_disrupt_1, _ = disrupt_conn(svd_post, [1])
-    net_disrupt_145, J_disrupt_145, _ = disrupt_conn(svd_post, list(range(145, 155)))
-    k = rng.integers(2,600)
-    net_disrupt_k, J_disrupt_k, _ = disrupt_conn(svd_post, [k])
-    k10 = rng.integers(1,600, size=10)
-    net_disrupt_k10, J_disrupt_k10, _ = disrupt_conn(svd_post, k10)
+for i in tqdm(range(5)):
+    net_disrupt_mem, J_disrupt_mem = disrupt_conn(svds, i_memory, mode='forget')
+    net_disrupt_land, J_disrupt_land = disrupt_conn(svds, i_nonmem[0:10], mode='shuffle')
+    k10 = rng.choice(i_others, size=10, replace=False)
+    net_disrupt_ctrl, J_disrupt_ctrl = disrupt_conn(svds, k10, mode='forget')
 
-    nets = [netEIrec, net_disrupt_1, net_disrupt_145, net_disrupt_k, net_disrupt_k10]
-    r_onm, _ = response(nets, 'song', song_range, 7)
-    r_offm, pert = response(nets, 'other', other_range, 7)
-
-    res_onm['rate'].extend(r_onm)
-    res_offm['rate'].extend(r_offm)
-    res_offm['pert'].append(pert)
+    nets = [net, net_disrupt_mem, net_disrupt_land, net_disrupt_ctrl]
+    rate_offm.append(response(nets, 'other', pert_range, 6))
+    rate_onm.append(response(nets, 'song'))
     
-    # No need to save multiple J_post
-    J_disrs = [J_disrupt_1, J_disrupt_145, J_disrupt_k, J_disrupt_k10]
+    # No need to save multiple J_disrupt.
+    J_disrs = [J_disrupt_mem, J_disrupt_land, J_disrupt_ctrl]
     J_disr_corrs.extend([correlation(j[:NE,:NE], syl, dim=2) for j in J_disrs])
 
-to_save = dict(order=['original', 'landscape', '10 memory', '1 rand', '10 rand'], 
-               on_manifold=res_onm, off_manifold=res_offm, J_disr_corrs=J_disr_corrs,
-               syl=syl, i_pert=i_pert, ti=ti, tj=tj, Js=Js)
+to_save = dict(order=['original', 'memory', 'landscape', 'rand'], 
+               on_manifold=rate_onm, off_manifold=rate_offm, J_disr_corrs=J_disr_corrs,
+               syl=syl, svds=svds)
 
 import pickle
-with open('../results/EIrec_J_disrupt_exp%s.pkl' % sys.argv[1], 'wb') as f:
+with open('../results/EIrec_J_disrupt_exp%s.pkl' % TID, 'wb') as f:
     pickle.dump(to_save, f)
