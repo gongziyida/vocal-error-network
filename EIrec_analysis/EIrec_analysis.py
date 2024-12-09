@@ -50,8 +50,7 @@ _ = np.arange(N_rend)
 # (N_HVC, N_rend)
 burst_ts = np.linspace(_*T_rend+T_burn, _*T_rend+T_burn+T_song, num=N_HVC, endpoint=False)
 
-save_W_ts = np.concatenate(([burst_ts[-1,0]//2], np.round(burst_ts[-1]+T_post+KERNEL_WIDTH)))
-save_W_ts = save_W_ts.astype(int)
+save_W_ts = np.round(burst_ts[-1]+KERNEL_WIDTH).astype(int)
 
 _ = np.zeros((N_HVC, N_rend))
 rH = generate_HVC(T, burst_ts, PEAK_RATE+_, KERNEL_WIDTH+_)

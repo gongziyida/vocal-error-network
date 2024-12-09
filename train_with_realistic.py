@@ -57,11 +57,7 @@ aud, _ = generate_realistic_aud(aud_real['ctrl'], N_rend, T_burn, T_post)
 _ = np.arange(N_rend)
 # (N_HVC, N_rend)
 burst_ts = np.linspace(_*T_rend+T_burn, _*T_rend+T_burn+T_song, num=N_HVC, endpoint=False)
-# save_W_ts = np.round(burst_ts[-1]+KERNEL_WIDTH).astype(int)
-save_W_ts = np.concatenate((np.linspace(0, burst_ts[-1,0], endpoint=False, num=7)[1:], 
-                            np.round(burst_ts[-1]+KERNEL_WIDTH)))
-save_W_ts = save_W_ts.astype(int)
-save_W_trial_num = [i/8 for i in range(7)] + [i for i in range(1, N_rend + 1)]
+save_W_ts = np.round(burst_ts[-1]+KERNEL_WIDTH).astype(int)
 
 if HVC_COND == 'mature_hvc':
     _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
@@ -184,7 +180,7 @@ elif ALT_REC_PLASTICITY == 'EIIE':
     plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI,JIE=bilin_hebb_IE), 
                              lr=dict(JEI=5e-2,JIE=6e-3), tauW=1e5, 
                              JEI0_mean=JEI0, JIE0_mean=JIE0, 
-                             asyn_E=10, asyn_I=0, rE_th=1.5, rI_th=5)
+                             asyn_E=10, asyn_I=0, rE_th=1.5, rI_th=4.5)
 rE, rI, Ws_EIrecEI, _, _ = netEIrecEI.sim(hE0, hI0, rH, aud, save_W_ts, T, dt, 1, 
                                           **plasticity_kwargs)
 
@@ -247,6 +243,6 @@ with open(os.path.join(RESULT_DIR, 'trained_models_%s_map_%s_%s_%s.pkl') % \
                  'EI-E2I2E': netEIrecEI, 'mapping': mapping}, f)
 
 ### Save EIrec weights
-with open(os.path.join(RESULT_DIR, 'EIrec_weights_evolve_%s_map_%s_%s_%s.pkl') % \
-          (AUD_MAP_TYPE, ALT_REC_PLASTICITY, HVC_COND, TID), 'wb') as f:
-    pickle.dump((save_W_trial_num, {'E2E': Ws_EIrecEE, 'E2I': Ws_EIrecEI}), f)
+# with open(os.path.join(RESULT_DIR, 'EIrec_weights_evolve_%s_map_%s_%s_%s.pkl') % \
+#           (AUD_MAP_TYPE, ALT_REC_PLASTICITY, HVC_COND, TID), 'wb') as f:
+#     pickle.dump({'E2E': Ws_EIrecEE, 'E2I': Ws_EIrecEI}, f)
