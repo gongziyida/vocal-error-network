@@ -20,19 +20,16 @@ PEAK_RATE, KERNEL_WIDTH = 150, 20
 tauE, tauI, dt = 30, 10, 1
 
 ### EI transfer function parameters
-rEmax, rImax, thE, thI, slope = 50, 100, -4, 0, 2
-phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * slope)))
-phiI = lambda x: rImax/2 * (1 + erf((x - thI) / (np.sqrt(2) * slope)))
+rEmax, rImax, thE, thI, slope = 50, 100, 0, 0, 2
 
 ### FF transfer function parameters
 r_rest = 2 # target rate when phi(0)
 thFF = -erfinv(r_rest * 2 / rEmax - 1) * (np.sqrt(2) * slope)
-phi = lambda x: rEmax/2 * (1 + erf((x - thFF) / (np.sqrt(2) * slope)))
 
 ### Read and map auditory inputs
 fname = '../realistic_auditory_processing/learned_song_responses.npz'
 ma = 1/100 if AUD_MAP_TYPE=='discrete' else None
-aud_real, mapping = read_realistic_input(fname, NE, mean=2, scale=3, 
+aud_real, mapping = read_realistic_input(fname, NE, mean=0, scale=2, 
                                          mapping=AUD_MAP_TYPE, mapping_args=ma)
 
 ### Time window of perturbation
@@ -57,13 +54,14 @@ _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
 rH = generate_HVC(T, burst_ts, PEAK_RATE+_*0, KERNEL_WIDTH+_*0)
 
 ### Net parameters
-w0_mean, w0_std, cW_HVC2E, cW_E2E = 1/N_HVC, 0, 1, 0.05
+w0_mean, cW_HVC2E, cW_E2E = 0.05/N_HVC, 1, 0.05
 w_inh_HVC2E = w0_mean*cW_HVC2E
 w_inh_E2E = w0_mean*cW_E2E
 
 gen = lognormal_gen
 c = 0.5
-JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.2, 1.8]) / 4
+srKEc, srKIc = np.sqrt(NE*c), np.sqrt(NI*c)
+JEE0, JEI0, JIE0, JII0 = np.array([1/srKEc, 1.7/srKIc, 1/srKEc, 1.5/srKIc]) / 10
 sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.1
 
 
@@ -75,35 +73,61 @@ for repeat in range(N_repeat):
                                      mapping=AUD_MAP_TYPE, mapping_args=ma)
     aud, aud_idx = generate_realistic_aud(aud_real['ctrl'], N_rend, T_burn, T_post)
     
-    JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True) / np.sqrt(NE)
-    JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True) / np.sqrt(NI)
-    JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True) / np.sqrt(NE)
-    JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True) / np.sqrt(NI)
+    JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True)
+    JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True)
+    JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True)
+    JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
     
     hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
     hI0 = rng.normal(loc=-1, scale=0.5, size=NI)
         
     for th in range(6):
-        netFF = WCNet(NE, N_HVC, w0_mean, phi, tauE, 
-                      w_inh=w_inh_HVC2E, w0_std=w0_std)
-        netEI = EINet(NE, NI, N_HVC, w0_mean, phiE, phiI, tauE, tauI, 
-                      JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
-                      w_inh=w_inh_HVC2E, w0_std=w0_std)
-        netEIrec = EINet(NE, NI, N_HVC, w0_mean, phiE, phiI, tauE, tauI, 
-                         JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
-                         w_inh=w_inh_E2E, w0_std=w0_std, cW=cW_E2E)
+        netFF = WCNet(NE, N_HVC, w0_mean, (rEmax, thFF+3, slope), tauE, 
+                      w0_std=0, cW=cW_HVC2E)
+        netEI = EINet(NE, NI, N_HVC, w0_mean, 
+                      (rEmax, thE+3, slope), (rImax, thI, slope), tauE, tauI, 
+                      JEE=JEE.copy(), JEI=JEI.copy(), 
+                      JIE=JIE.copy(), JII=JII.copy(), 
+                      w0_std=0, cW=cW_HVC2E)
+        netEIrecEE = EINet(NE, NI, N_HVC, w0_mean, 
+                           (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+                           JEE=JEE.copy(), JEI=JEI.copy(), 
+                           JIE=JIE.copy(), JII=JII.copy(), 
+                           w0_std=0, cW=cW_E2E)
+        netEIrecEI = EINet(NE, NI, N_HVC, w0_mean, 
+                           (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+                           JEE=JEE.copy(), JEI=JEI.copy(), 
+                           JIE=JIE.copy(), JII=JII.copy(), 
+                           w0_std=0, cW=cW_E2E)
         
-        res = dict(FF=[], EI=[], EIrec=[])
+        res = dict(FF=[], HVC2E=[], E2E=[], E2I2E_thI5=[], E2I2E_thI10=[])
         plasticity_kwargs = dict(plasticity=bilin_hebb_E_HVC, lr=-3e-2, 
-                                 tauW=1e5, asyn_H=0, rE_th=th)
+                                 tauW=1e5, asyn_H=10, rE_th=th)
         res['FF'] = netFF.sim(hE0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
-        plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), lr=dict(HVC=-3e-2), 
-                                 tauW=1e5, asyn_H=0, rE_th=th)
-        res['EI'] = netEI.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
-        plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-6e-2), 
-                                 tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=th)
-        res['EIrec'] = netEIrec.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
+        plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), 
+                                 lr=dict(HVC=-3e-2), tauW=1e5, asyn_H=10, rE_th=th)
+        res['HVC2E'] = netEI.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
+        plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-5e-2),
+                                 tauW=1e5, JEE0_mean=JEE0, asyn_E=10, rE_th=th)
+        res['E2E'] = netEIrecEE.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
+        plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI,JIE=bilin_hebb_IE), 
+                                 lr=dict(JEI=5e-2,JIE=5e-3), tauW=1e5, 
+                                 JEI0_mean=JEI0, JIE0_mean=JIE0, 
+                                 asyn_E=10, asyn_I=0, rE_th=th, rI_th=5) # rI_th = 5
+        res['E2I2E_thI5'] = netEIrecEI.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
 
+        # redo for rI_th = 10
+        netEIrecEI = EINet(NE, NI, N_HVC, w0_mean, 
+                           (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+                           JEE=JEE.copy(), JEI=JEI.copy(), 
+                           JIE=JIE.copy(), JII=JII.copy(), 
+                           w0_std=0, cW=cW_E2E)
+        plasticity_kwargs = dict(plasticity=dict(JEI=bilin_hebb_EI,JIE=bilin_hebb_IE), 
+                                 lr=dict(JEI=5e-2,JIE=5e-3), tauW=1e5, 
+                                 JEI0_mean=JEI0, JIE0_mean=JIE0, 
+                                 asyn_E=10, asyn_I=0, rE_th=th, rI_th=10) # rI_th = 10
+        res['E2I2E_thI10'] = netEIrecEI.sim(hE0, hI0, rH, aud, [], T, dt, 0, **plasticity_kwargs)[0]
+        
         for k, v in res.items():
             df['model'].append(k)
             df['th'].append(th)
