@@ -1,5 +1,4 @@
 #!/bin/bash
-python3 vary_plasticity_th_realistic_input.py neighbor
-python3 vary_HVC_sparsity_realistic_input.py neighbor
-python3 vary_plasticity_th_toy_input.py
-python3 vary_HVC_sparsity_toy_input.py
+python3 experiments.py neighbor cW & 
+python3 experiments.py neighbor plasticity_th & 
+python3 experiments.py neighbor thE

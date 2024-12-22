@@ -110,8 +110,8 @@ syl = syl[find_peaks(aux)[0]]
 
 ## Find modes
 mem_enc, i_memory, i_nonmem = characterize_memory(svds, syl, 'left')
-i_landscape = [i for i in i_nonmem if (i != 0) and (i < 50) and (i not in i_memory)]
-i_others = [i for i in i_nonmem if (i != 0) and (i < 200) and (i not in i_landscape)]
+i_landscape = [i for i in i_nonmem if i != 0 and i < 150]
+i_others = [i for i in i_nonmem if i >= 150]
 
 ## Helper functions
 def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
@@ -188,7 +188,7 @@ def response(nets, var_dir, a_range=None, n_points=None, i_pert=3):
         elif var_dir == 'song':
             aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, syl) * a
         
-        args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 1)
+        args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 0.1)
         for i, net in enumerate(nets):
             aux = net.sim(*args, no_progress_bar=True)[0]
             li[i].append(aux[T_burn:T_burn+T_song].mean(axis=0))
@@ -206,7 +206,7 @@ for i in tqdm(range(5)):
     net_disrupt_mem, J_disrupt_mem = disrupt_conn(svds, i_memory, mode='forget')
     net_disrupt_land, J_disrupt_land = disrupt_conn(svds, i_nonmem[0:10], mode='shuffle')
     k10 = rng.choice(i_others, size=10, replace=False)
-    net_disrupt_ctrl, J_disrupt_ctrl = disrupt_conn(svds, k10, mode='forget')
+    net_disrupt_ctrl, J_disrupt_ctrl = disrupt_conn(svds, k10, mode='shuffle')
 
     nets = [net, net_disrupt_mem, net_disrupt_land, net_disrupt_ctrl]
     rate_offm.append(response(nets, 'other', pert_range, 6))

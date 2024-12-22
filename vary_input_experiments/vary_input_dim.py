@@ -29,31 +29,29 @@ tsyl_start, tsyl_end, burst_ts = generate_syl_time(T, T_burn, T_rend, N_syl, N_H
 _ = rng.standard_normal((N_HVC, N_rend)) # Little fluctuation
 rH = generate_HVC(T, burst_ts, peak_rate+_*0, kernel_width+_*0)
 
-w0_mean, w0_mean_EIrec, cW_EIrec = 1/N_HVC, 1/N_HVC, 0.05
-w_inh, w_inh_EIrec, wI = w0_mean, w0_mean_EIrec*cW_EIrec, 0.0
+w0_mean_HVC2E, w0_mean_E2E = 0.1/N_HVC, 1/N_HVC
 tauE, tauI, dt = 30, 10, 1
 
 #### EI network ####
 
 gen = lognormal_gen
 c = 0.5
-JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.2, 1.8]) / 4
+# JEE0, JEI0, JIE0, JII0 = np.array([1, 1.7, 1.3, 1.8]) / 5
+srKEc, srKIc = np.sqrt(NE*c), np.sqrt(NI*c)
+JEE0, JEI0, JIE0, JII0 = np.array([1/srKEc, 1.7/srKIc, 1/srKEc, 1.5/srKIc]) / 10
 sEE, sEI, sIE, sII = np.array([JEE0, JEI0, JIE0, JII0]) * 0.1
+JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=True)
+JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=True)
+JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=True)
+JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
+gen = lognormal_gen
 
-JEE = generate_matrix(NE, NE, gen, c, rng=rng, mean=JEE0, std=sEE, sparse=c<=0.5) / np.sqrt(NE)
-JEI = generate_matrix(NE, NI, gen, c, rng=rng, mean=JEI0, std=sEI, sparse=c<=0.5) / np.sqrt(NI)
-JIE = generate_matrix(NI, NE, gen, c, rng=rng, mean=JIE0, std=sIE, sparse=c<=0.5) / np.sqrt(NE)
-JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=c<=0.5) / np.sqrt(NI)
-
-rEmax, rImax, thE, thI, sE, sI = 50, 100, -4, 0, 2, 2
-phiE = lambda x: rEmax/2 * (1 + erf((x - thE) / (np.sqrt(2) * sE)))
-phiI = lambda x: rImax/2 * (1 + erf((x - thI) / (np.sqrt(2) * sI)))
+rEmax, rImax, thE, thI, sE, sI = 100, 100, 0, 0, 2, 2
 
 #### Feedforward ####
 r_rest = 2 # target rate when phi(0)
-rmax, s = 50, 2
+rmax, s = 100, 2
 th = -erfinv(r_rest * 2 / rmax - 1) * (np.sqrt(2) * s)
-phi = lambda x: rmax/2 * (1 + erf((x - th) / (np.sqrt(2) * s)))
 
 #### Test models ####
 Ks = np.array([5, 10, 20, 40, 60, 100])
@@ -61,13 +59,19 @@ Ks = np.array([5, 10, 20, 40, 60, 100])
 FF_pwcorrs, EI_pwcorrs, EIrec_pwcorrs = [], [], []
 FF_sparsity, EI_sparsity, EIrec_sparsity = [{i: [] for i in (1, 3, 5)} for _ in range(3)]
 for K in Ks:
-    FFnet = WCNet(NE, N_HVC, w0_mean, phi, tauE, w_inh=w_inh)
-    EInet = EINet(NE, NI, N_HVC, w0_mean, phiE, phiI, tauE, tauI, 
+    netFF = WCNet(NE, N_HVC, w0_mean_HVC2E, (rEmax, thFF+3, slope), tauE, w0_std=0)
+    netEI = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE+3, slope), 
+                  (rImax, thI, slope), tauE, tauI, 
                   JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
-                  w_inh=w_inh, wI=wI)
-    EIrec = EINet(NE, NI, N_HVC, w0_mean_EIrec, phiE, phiI, tauE, tauI, 
-                  JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
-                  w_inh=w_inh_EIrec, wI=wI, cW=cW_EIrec)
+                  w0_std=0, cW=1)
+    netEIrecEE = EINet(NE, NI, N_HVC, w0_mean_E2E, (rEmax, thE, slope), 
+                       (rImax, thI, slope), tauE, tauI, 
+                       JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
+                       w0_std=0, cW=0.05)
+    netEIrecEI = EINet(NE, NI, N_HVC, w0_mean_E2E, (rEmax, thE, slope), 
+                       (rImax, thI, slope), tauE, tauI, 
+                       JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
+                       w0_std=0, cW=0.05)
     
     syl_cov = block_sym_mat(NE, K=K, var=9, cov=8)
     syl = rng.multivariate_normal(np.ones(NE), syl_cov, size=N_syl)
@@ -78,13 +82,13 @@ for K in Ks:
 
     # Training
     plasticity_kwargs = dict(plasticity=bilin_hebb_E_HVC, lr=-5e-2, 
-                             tauW=1e5, asyn_H=0, rE_th=1)
+                             tauW=1e5, asyn_H=0, rE_th=1.5)
     _ = FFnet.sim(hE0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
     plasticity_kwargs = dict(plasticity=dict(HVC=bilin_hebb_E_HVC), 
-                             lr=dict(HVC=-8e-2), tauW=1e5, asyn_H=0, rE_th=1)
+                             lr=dict(HVC=-8e-2), tauW=1e5, asyn_H=0, rE_th=1.5)
     _ = EInet.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
     plasticity_kwargs = dict(plasticity=dict(JEE=bilin_hebb_EE), lr=dict(JEE=-2e-1), 
-                             tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1)
+                             tauW=1e5, JEE0_mean=JEE0/np.sqrt(NE), asyn_E=10, rE_th=1.5)
     _ = EIrec.sim(hE0, hI0, rH, aud, [], T, dt, 1, **plasticity_kwargs)
 
     # Test with perturbation
