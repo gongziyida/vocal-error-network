@@ -153,23 +153,21 @@ def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
     return net_disrupt, J_disrupt
 
 
-def response(nets, var_dir, a_range=None, n_points=None, i_pert=3):
+def response(nets, var_dir, n_points, i_pert=3):
     ''' Probe the networks' responses to perturbations. Return averaged response (nets, n_points, NE).
     Parameters
     ----------
     nets: list of EINet
     var_dir: Direction of variation. Either 'song' or 'other'.
-    a_range: 2-tuple containing the min and max of the scales `a` along the direction of variation, 
-             required if `var_dir='other'`.
     n_points: Number of `a` to test, required if `var_dir='other'`.
     '''
     T_test = T_burn + T_rend
     tsyl_start, tsyl_end = generate_syl_time(T_test, T_burn, T_rend, syl.shape[0], N_HVC)[:2]
     
     if var_dir == 'song':
-        a_vals = [1, 0] # song, deaf
+        a_vals = np.linspace(0, 1, num=n_points) # song scalings
     else:
-        a_vals = np.linspace(*a_range, num=n_points)
+        a_vals = np.linspace(0, 1, num=n_points) # SNR
         step = mapping.shape[1] // mapping.shape[0]
         pert = syl[i_pert].copy()#[::mapping.shape[1]//mapping.shape[0]]
         rng.shuffle(pert)
@@ -197,7 +195,6 @@ def response(nets, var_dir, a_range=None, n_points=None, i_pert=3):
 
 
 ## Testing
-pert_range = (0, 1)
 rate_onm = [] # on-manifold variation
 rate_offm = [] # off-manifold variation
 J_disr_corrs = []
@@ -209,8 +206,8 @@ for i in tqdm(range(5)):
     net_disrupt_ctrl, J_disrupt_ctrl = disrupt_conn(svds, k10, mode='shuffle')
 
     nets = [net, net_disrupt_mem, net_disrupt_land, net_disrupt_ctrl]
-    rate_offm.append(response(nets, 'other', pert_range, 6))
-    rate_onm.append(response(nets, 'song'))
+    rate_offm.append(response(nets, 'other', n_points=6))
+    rate_onm.append(response(nets, 'song', n_points=6))
     
     # No need to save multiple J_disrupt.
     J_disrs = [J_disrupt_mem, J_disrupt_land, J_disrupt_ctrl]

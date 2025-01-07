@@ -63,7 +63,7 @@ elif HVC_COND == 'developing_hvc':
     kernel_widths = np.zeros_like(burst_ts) + KERNEL_WIDTH
     for i in range(N_rend):
         # discount factor j; divided by np.tanh(N_rend/2/15)+1.15 to make sure j(i=0) = 1
-        j = (np.tanh(-(i-N_rend/2)/15)+1.15) / (np.tanh(N_rend/2/15)+1.15)
+        j = (np.tanh(-(i-N_rend/2)/10)+1.15) / (np.tanh(N_rend/2/10)+1.15)
         burst_ts[:,i] += rng.normal(loc=0, scale=100*j, size=N_HVC)
         peak_rates[:,i] = lognormal_gen(rng, PEAK_RATE, 70*j, size=N_HVC)
         kernel_widths[:,i] += rng.exponential(60*j, size=N_HVC)
@@ -88,7 +88,7 @@ JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
 w0_mean_HVC2E, w0_std_HVC2E, cW_HVC2E = 1/N_HVC, 1e-2, 1
 
 net_FF = WCNet(NE, N_HVC, w0_mean_HVC2E, (rEmax, thE+6, slope), tauE, w0_std=w0_std_HVC2E, cW=cW_HVC2E)
-net_HVC2E = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE+4, slope), (rImax, thI, slope), tauE, tauI, 
+net_HVC2E = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE+6, slope), (rImax, thI, slope), tauE, tauI, 
                   JEE=JEE.copy(), JEI=JEI.copy(), JIE=JIE.copy(), JII=JII.copy(), 
                   w0_std=w0_std_HVC2E, cW=cW_HVC2E)
 
