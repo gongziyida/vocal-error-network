@@ -76,7 +76,7 @@ def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end,
         ax[i].set_title(test_names[i], fontsize=10)
         
     ax[0].set_yticks([0, N-1], [1, N], rotation=90)
-    ax[0].set_ylabel('E neuron index\n(sorted by error)')
+    ax[0].set_ylabel('E neuron index\n(sorted by change in input)')
     fig.colorbar(im, cax=ax[-1])
     ax[-1].set(yticks=[0, th//2, th], yticklabels=[0, th//2, '≥%d' % th])
     ax[-1].set_title('Hz', ha='left', fontsize=10)

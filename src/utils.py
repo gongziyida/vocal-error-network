@@ -90,11 +90,14 @@ def temporal_sort(r, by, t0=0):
     t0: the start time of the stimulus
     '''
     # Negative or positive peaks
-    when_ri_peak = np.argmax(np.abs(r[t0:]), axis=0)
     if by == 'dmean':
         drmean = r[t0:].mean(axis=0) - r[:t0].mean(axis=0)
         mask_pos, mask_neg = drmean > 0, drmean < 0
+        when_ri_peak = np.zeros(r.shape[1])
+        when_ri_peak[mask_pos] = np.argmax(r[t0:, mask_pos], axis=0)
+        when_ri_peak[mask_neg] = np.argmin(r[t0:, mask_neg], axis=0)
     elif by == 'rmax':
+        when_ri_peak = np.argmax(np.abs(r[t0:]), axis=0)
         r_max = np.array([r[t0+t,i] for i, t in enumerate(when_ri_peak)])
         mask_pos, mask_neg = r_max > 0, r_max < 0
     else:
