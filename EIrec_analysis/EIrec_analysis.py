@@ -110,8 +110,9 @@ syl = syl[find_peaks(aux)[0]]
 
 ## Find modes
 mem_enc, i_memory, i_nonmem = characterize_memory(svds, syl, 'left')
-i_landscape = [i for i in i_nonmem if i != 0 and i < 150]
-i_others = [i for i in i_nonmem if i >= 150]
+k_other = np.argsort(np.diff(np.log10(svds[-1][1][120:220])))[0] + 120
+i_landscape = [i for i in i_nonmem if i != 0 and i < k_other]
+i_others = [i for i in i_nonmem if i >= k_other]
 
 ## Helper functions
 def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
@@ -130,27 +131,41 @@ def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
         mem_basis = svd(mem)[2][:mem.shape[0]]
         U_mem_encode = ((mem_basis @ U[:NE])[:,None,:] * mem_basis[:,:,None]).sum(axis=0)
         U[:NE] -= U_mem_encode
+        U[:NE] *= np.sqrt((1 - (U[NE:]**2).sum(axis=0)[None,:]) / (U[:NE]**2).sum(axis=0)[None,:])
+        assert np.allclose(np.linalg.norm(U, axis=0), 1), np.linalg.norm(U, axis=0)
         # V_mem_encode = ((V[:,:NE] @ mem_basis.T)[:,None,:] * mem_basis.T[None,:,:]).sum(axis=-1)
         # V[:,:NE] -= V_mem_encode
-    elif mode == 'shuffle':
+        # V[:,:NE] *= np.sqrt((1 - (V[:,NE:]**2).sum(axis=1)[:,None]) / (V[:,:NE]**2).sum(axis=1)[:,None])
+        # assert np.allclose(np.linalg.norm(V, axis=1), 1), np.linalg.norm(V, axis=0)
+    elif mode == 'shuffleE':
         idx_shuff = np.arange(0, NE)
         rng.shuffle(idx_shuff)
         U[:NE] = U[idx_shuff]
         # V[:,:NE] = V[:,idx_shuff]
+    elif mode == 'shuffleAll':
+        idx_shuff = np.arange(0, NE+NI)
+        rng.shuffle(idx_shuff)
+        U[:] = U[idx_shuff]
+        # V[:] = V[:,idx_shuff]
+    elif mode == 'noise':
+        U[:] = rng.normal(size=U.shape)
+        U /= np.linalg.norm(U, axis=0)
+    elif mode == 'zero':
+        U[:] = 0
+    elif mode == 'swap':
+        U[:] = svd_post[0][:,-len(idx_disrupt):]
     
-    U /= np.linalg.norm(U, axis=0)[None,:]
-    # V /= np.linalg.norm(V, axis=1)[:,None]
-    J_disrupt = svd_post[0][:,idx] @ np.diag(svd_post[1][idx]) @ svd_post[2][idx,:] \
+    J_disr = svd_post[0][:,idx] @ np.diag(svd_post[1][idx]) @ svd_post[2][idx,:] \
               + U @ np.diag(svd_post[1][idx_disrupt]) @ V
 
-    net_disrupt = EINet(NE, NI, N_HVC, w0_mean, 
+    net_disr = EINet(NE, NI, N_HVC, w0_mean, 
                         (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
-                        JEE=J_disrupt[:NE,:NE], JEI=-J_disrupt[:NE,NE:], 
-                        JIE=J_disrupt[NE:,:NE], JII=-J_disrupt[NE:,NE:], 
+                        JEE=J_disr[:NE,:NE], JEI=-J_disr[:NE,NE:], 
+                        JIE=J_disr[NE:,:NE], JII=-J_disr[NE:,NE:], 
                         w0_std=0, cW=cW)
-    net_disrupt.W = net.W.copy()
+    net_disr.W = net.W.copy()
 
-    return net_disrupt, J_disrupt
+    return net_disr, J_disr
 
 
 def response(nets, var_dir, n_points, i_pert=3):
@@ -197,26 +212,25 @@ def response(nets, var_dir, n_points, i_pert=3):
 ## Testing
 rate_onm = [] # on-manifold variation
 rate_offm = [] # off-manifold variation
-J_disr_corrs = []
-
-for i in tqdm(range(5)):
-    net_disrupt_mem, J_disrupt_mem = disrupt_conn(svds, i_memory, mode='forget')
-    net_disrupt_land, J_disrupt_land = disrupt_conn(svds, i_nonmem[0:10], mode='shuffle')
-    k10 = rng.choice(i_others, size=10, replace=False)
-    net_disrupt_ctrl, J_disrupt_ctrl = disrupt_conn(svds, k10, mode='shuffle')
-
-    nets = [net, net_disrupt_mem, net_disrupt_land, net_disrupt_ctrl]
-    rate_offm.append(response(nets, 'other', n_points=6))
-    rate_onm.append(response(nets, 'song', n_points=6))
-    
-    # No need to save multiple J_disrupt.
-    J_disrs = [J_disrupt_mem, J_disrupt_land, J_disrupt_ctrl]
-    J_disr_corrs.extend([correlation(j[:NE,:NE], syl, dim=2) for j in J_disrs])
-
-to_save = dict(order=['original', 'memory', 'landscape', 'rand'], 
-               on_manifold=rate_onm, off_manifold=rate_offm, J_disr_corrs=J_disr_corrs,
-               syl=syl, svds=svds)
 
 import pickle
-with open('../results/EIrec_J_disrupt_exp%s.pkl' % TID, 'wb') as f:
-    pickle.dump(to_save, f)
+for pert_mode in tqdm(('shuffleAll', 'shuffleE', 'noise', 'zero', 'swap')):
+    for i in range(5):
+        net_disr_mem, J_disr_mem = disrupt_conn(svds, i_memory, mode='forget')
+        k_sel = i_landscape[:15] #rng.choice(i_landscape, size=15, replace=False)
+        net_disr_land, J_disr_land = disrupt_conn(svds, k_sel, mode=pert_mode)
+        k_sel = i_others[:15] #rng.choice(i_others, size=15, replace=False)
+        net_disr_ctrl, J_disr_ctrl = disrupt_conn(svds, k_sel, mode=pert_mode)
+    
+        nets = [net, net_disr_mem, net_disr_land, net_disr_ctrl]
+        rate_offm.append(response(nets, 'other', n_points=6))
+        rate_onm.append(response(nets, 'song', n_points=6))
+    
+    to_save = dict(order=['original', 'memory', 'landscape', 'rand'],
+                   on_manifold=rate_onm, off_manifold=rate_offm)
+
+    with open(f'../results/EIrec_J_disr_exp_{pert_mode}_{TID}.pkl', 'wb') as f:
+        pickle.dump(to_save, f)
+
+with open(f'../results/EI_rec_J_disr_exp_meta_{TID}.pkl', 'wb') as f:
+    pickle.dump(dict(syl=syl, svds=svds), f)
