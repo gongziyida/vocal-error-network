@@ -9,6 +9,7 @@ from scipy.linalg import svd
 from models import *
 from train_funcs import *
 from utils import *
+from RL import *
 from helper_funcs import *
 
 ## Preparations
@@ -17,6 +18,7 @@ IMG_DIR = 'svg/'
 RESULT_DIR = 'results/'
 REC_PLASTICITY, TID = sys.argv[1:3]
 AUD_MAP_TYPE = 'neighbor'
+PERT_MODE = 'shuffleAll'
 
 ### Constants
 NE, NI, N_HVC = 600, 150, 15
@@ -168,68 +170,50 @@ def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
     return net_disr, J_disr
 
 
-def response(nets, var_dir, n_points, i_pert=3):
-    ''' Probe the networks' responses to perturbations. Return averaged response (nets, n_points, NE).
-    Parameters
-    ----------
-    nets: list of EINet
-    var_dir: Direction of variation. Either 'song' or 'other'.
-    n_points: Number of `a` to test, required if `var_dir='other'`.
-    '''
-    T_test = T_burn + T_rend
-    tsyl_start, tsyl_end = generate_syl_time(T_test, T_burn, T_rend, syl.shape[0], N_HVC)[:2]
-    
-    if var_dir == 'song':
-        a_vals = np.linspace(0, 1, num=n_points) # song scalings
-    else:
-        a_vals = np.linspace(0, 1, num=n_points) # SNR
-        step = mapping.shape[1] // mapping.shape[0]
-        pert = syl[i_pert].copy()#[::mapping.shape[1]//mapping.shape[0]]
-        rng.shuffle(pert)
-        # pert = pert @ mapping
-        bos = syl.copy()
-    
-    li = [[] for _ in range(len(nets))]
-    
-    hE0 = rng.normal(loc=-10, scale=0.5, size=NE)
-    hI0 = rng.normal(loc=-1, scale=0.5, size=NI)    
-    
-    for a in a_vals:
-        if var_dir == 'other':
-            bos[i_pert] = syl[i_pert] * np.sqrt(1 - a**2) + pert * a
-            aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, bos)
-        elif var_dir == 'song':
-            aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, syl) * a
+## Making RL environments
+adult = dict(np.load('../adult_songs/data.npz'))
+n_samples, n_syl, n_freq_bins, n_time_bins = adult['spec_syl'].shape
+
+n_basis = 30
+basis = np.zeros((n_basis, n_freq_bins*n_time_bins))
+coefs = np.zeros((n_samples*n_syl, n_basis))
+with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+    dl = DictionaryLearning(n_components=n_basis, alpha=0.001, fit_algorithm='cd', 
+                            positive_code=True, positive_dict=True)
+    aux = np.concatenate([adult['spec_syl'][:,i].reshape(n_samples, -1) 
+                          for i in range(n_syl)])
+    coefs = dl.fit_transform(aux)
+    a_std = coefs.std(axis=0)[None,:]
+    coefs/= a_std
+    basis = dl.components_ * a_std.T
+
+env = Environment(basis, n_time_bins, T_song, 
+                  adult['syl_on'].mean(axis=0).astype(int), 
+                  adult['syl_off'].mean(axis=0).astype(int),
+                  '../realistic_auditory_processing/net_params.pkl', 
+                  '../results/', 'EI-E2I2E') # ve net will be replaced
+
+# perturb and then do RL
+repeats = 3
+names = ['memory', 'landscape', 'rand']
+for i in range(repeats):
+    net_disr_mem, J_disr_mem = disrupt_conn(svds, i_memory, mode='forget')
+    k_sel = i_landscape[:15] #rng.choice(i_landscape, size=15, replace=False)
+    net_disr_land, J_disr_land = disrupt_conn(svds, k_sel, mode=PERT_MODE)
+    k_sel = i_others[:15] #rng.choice(i_others, size=15, replace=False)
+    net_disr_ctrl, J_disr_ctrl = disrupt_conn(svds, k_sel, mode=PERT_MODE)
+
+    for net_name, net_ in zip(names, (net_disr_mem, net_disr_land, net_disr_ctrl)):
+        env.ve_net = net_
         
-        args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 0.1)
-        for i, net in enumerate(nets):
-            aux = net.sim(*args, no_progress_bar=True)[0]
-            li[i].append(aux[T_burn:T_burn+T_song].mean(axis=0))
-    
-    return np.stack([np.stack(i, axis=0) for i in li], axis=0)
+        agent = ActorCritic(n_syl, env.action_dim)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=1e-2)
+        
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            ret = RL(env, agent, optimizer, max_epochs=2500)
 
-
-## Testing
-rate_onm = [] # on-manifold variation
-rate_offm = [] # off-manifold variation
-
-for pert_mode in tqdm(('shuffleAll', 'shuffleE', 'noise', 'zero', 'swap')):
-    for i in range(5):
-        net_disr_mem, J_disr_mem = disrupt_conn(svds, i_memory, mode='forget')
-        k_sel = i_landscape[:15] #rng.choice(i_landscape, size=15, replace=False)
-        net_disr_land, J_disr_land = disrupt_conn(svds, k_sel, mode=pert_mode)
-        k_sel = i_others[:15] #rng.choice(i_others, size=15, replace=False)
-        net_disr_ctrl, J_disr_ctrl = disrupt_conn(svds, k_sel, mode=pert_mode)
-    
-        nets = [net, net_disr_mem, net_disr_land, net_disr_ctrl]
-        rate_offm.append(response(nets, 'other', n_points=6))
-        rate_onm.append(response(nets, 'song', n_points=6))
-    
-    to_save = dict(order=['original', 'memory', 'landscape', 'rand'],
-                   on_manifold=rate_onm, off_manifold=rate_offm)
-
-    with open(f'../results/{REC_PLASTICITY}_J_disr_exp_{pert_mode}_{TID}.pkl', 'wb') as f:
-        pickle.dump(to_save, f)
-
-with open(f'../results/{REC_PLASTICITY}_J_disr_exp_meta_{TID}.pkl', 'wb') as f:
-    pickle.dump(dict(syl=syl, svds=svds), f)
+        fname = f'EIrec_J_disr_RL_{PERT_MODE}_{int(TID)*repeats+i}_{net_name}'
+        with open(f'../results/{fname}.pkl', 'wb') as f:
+            to_save = dict(ve_rate=ret['ve_rate'], advantage=ret['advantage'], 
+                           songs=ret['songs'][-1])
+            pickle.dump(to_save, f)

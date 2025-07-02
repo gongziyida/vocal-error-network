@@ -357,11 +357,12 @@ def plot_raster(model1, model2, mname1, mname2, NE, cond_names,
     return fig, ax
 
 
-def plot_mean_std(ax, mean, std, a_fill, c, ls='-', xs=None, label=''):
+######## Axis-level plotting ########
+def plot_mean_std(ax, mean, std, a_fill, c, ls='-', lw=1.5, xs=None, label=''):
     if xs is None:
         xs = np.arange(len(mean))
     ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
-    return ax.plot(xs, mean, c=c, label=label, ls=ls)
+    return ax.plot(xs, mean, c=c, label=label, ls=ls, lw=lw)
 
 
 def draw_traj(ax, traj, cmaps, zorders, dt=5):
