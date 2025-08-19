@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 import sys, pickle
-sys.path.append('src')
+sys.path.append('../src')
 import numpy as np
 from tqdm import tqdm
 from scipy.special import erf, erfinv
@@ -12,8 +12,7 @@ from utils import lognormal_gen, generate_matrix
 
 ## Preparations
 rng = np.random.default_rng()
-IMG_DIR = 'svg/'
-RESULT_DIR = 'results/'
+RESULT_DIR = '../results/'
 TID, AUD_MAP_TYPE, ALT_REC_PLASTICITY, HVC_COND = sys.argv[1:5]
 assert AUD_MAP_TYPE in ('neighbor', 'gaussian', 'discrete')
 assert ALT_REC_PLASTICITY in ('EI', 'EIIE')
@@ -28,7 +27,7 @@ tauE, tauI, dt = 30, 10, 1
 rEmax, rImax, thE, thI, slope = 100, 100, 0, 0, 2
 
 ### Read and map auditory inputs
-fname = 'realistic_auditory_processing/learned_song_responses.npz'
+fname = '../realistic_auditory_processing/learned_song_responses.npz'
 ma = 1/100 if AUD_MAP_TYPE=='discrete' else None
 aud_real, mapping = read_realistic_input(fname, NE, mean=0, scale=2, 
                                          mapping=AUD_MAP_TYPE, mapping_args=ma)
@@ -62,10 +61,11 @@ elif HVC_COND == 'developing_hvc':
     peak_rates = np.zeros_like(burst_ts)
     kernel_widths = np.zeros_like(burst_ts) + KERNEL_WIDTH
     for i in range(N_rend):
-        # discount factor j; divided by np.tanh(N_rend/2/15)+1.15 to make sure j(i=0) = 1
-        j = (np.tanh(-(i-N_rend/2)/10)+1.15) / (np.tanh(N_rend/2/10)+1.15)
+        # discount factor j
+        # j = (np.tanh(-(i-N_rend/6)/8)+1.1) / (np.tanh(N_rend/6/8)+1.1)
+        j = np.exp(-3*i/N_rend)
         burst_ts[:,i] += rng.normal(loc=0, scale=100*j, size=N_HVC)
-        peak_rates[:,i] = lognormal_gen(rng, PEAK_RATE, 70*j, size=N_HVC)
+        peak_rates[:,i] = lognormal_gen(rng, PEAK_RATE, 50*j, size=N_HVC)
         kernel_widths[:,i] += rng.exponential(60*j, size=N_HVC)
     rH = generate_HVC(T, burst_ts, peak_rates, kernel_widths)
 else:

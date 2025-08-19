@@ -4,41 +4,6 @@ import matplotlib.pyplot as plt
 from utils import *
 from matplotlib.colors import TwoSlopeNorm, Normalize
 
-def plot_train_stats(Ws, rE, mean_HVC_input, save_W_ts, rI=None):
-    ''' Plot some training stats
-    '''
-    W_norms = np.array([np.linalg.norm(_, ord='fro') for _ in Ws]) # Frobenius norm
-    n = 3 if rI is None else 4
-    fig, ax = plt.subplots(n, sharex='all', figsize=(4, n*1.5))
-    ax[0].plot(np.hstack([[0], save_W_ts]), W_norms)
-    ax[1].plot(mean_HVC_input)
-    ax[2].plot(rE.mean(axis=1))
-    if rI is not None:
-        ax[3].plot(rI if len(rI.shape) == 1 else rI.mean(axis=1))
-        ax[3].set(ylabel='Mean inh. rate')
-    ax[0].set(ylabel=r'$\left\langle \| W \|_F \right\rangle$')
-    ax[1].set(ylabel='mean input\nfrom HVC')
-    ax[2].set(ylabel='Mean exc. rate')
-    ax[-1].set(xlabel='Time (a.u.)')
-    return fig, ax
-
-def plot_train_converge(Ws, W_syl_corrs, save_W_ts, rE, r_target):
-    ''' Plot some convergence stats
-    '''
-    fig, ax = plt.subplots(3, sharex='all', figsize=(4, 4.5))
-    dW = [np.abs(Ws[i]-Ws[i-1]).mean(axis=0) for i in range(1,len(Ws))]
-    ax[0].plot(save_W_ts, dW)
-    dcorr = [np.abs(W_syl_corrs[i]-W_syl_corrs[i-1]).mean(axis=0) 
-             for i in range(1,len(W_syl_corrs))]
-    ax[1].plot(save_W_ts, dcorr, 
-               label=['syl. %d' % (i+1) for i in range(len(dcorr[0]))])
-    ax[1].legend(ncols=2)
-    ax[2].plot(np.abs(rE - r_target).mean(axis=1))
-    ax[0].set(ylabel=r'$\left\langle |\Delta W_{ij}|\right\rangle_i$', yscale='log')
-    ax[1].set(ylabel='weight corr.\nabs. change', yscale='log')
-    ax[2].set(ylabel=r'$\left\langle |r^E - r^E_0| \right\rangle$', yscale='log')
-    return fig, ax
-
 
 def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end, 
                              plot_z=False, sort_by='e', th=5,
@@ -63,12 +28,12 @@ def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end,
     idx_s = np.argsort(syl)[::-1]
     idx_ds = [np.argsort(_)[::-1] for _ in dsyl]
 
-    fig, ax = plt.subplots(1, len(rEs)+1, figsize=figsize, 
+    fig, ax = plt.subplots(1, len(rEs)+1, figsize=figsize, dpi=100, 
                            width_ratios=([1]*len(rEs))+[0.1]) # last for cbar
     for i in range(len(rEs)):
         idx = idx_s if sort_by=='p' else idx_ds[i]
         im = ax[i].imshow(zs[i][:,idx].T, aspect='auto', cmap='hot', rasterized=True,
-                          interpolation='antialiased', norm=norm)
+                          interpolation='auto', norm=norm)
         ax[i].spines.top.set_visible(True)
         ax[i].spines.right.set_visible(True)
         ax[i].axvline(tpre, ls='--', c='cyan', lw=2)
@@ -205,157 +170,87 @@ def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_pertu
     fig.tight_layout()
     return fig, ax
 
-def plot_ctrl_vs_nonctrl(tests, test_names, ti, tj):
-    ''' scatter plots showing the joint distributions of ctrl vs nonctrl
-    tests: list containing the excitatory rates
+def plot_ctrl_vs_nonctrl(tests, test_names, model_names, t0, t1, NE, figsize):
+    ''' Plot the joint distributions between ctrl and noncontrol conditions
+    tests: dict
+        Dictionary (test conditions) of lists (models) of arrays (simulations). 
+        Must contain the key 'ctrl'. 
+    test_names: dict
+        Keys are the keys of tests that are not 'ctrl'
+    model_names: array-like
+        Corresponds to the list in each test condition.
+    t0, t1: int
+        Singing onset and offset time indices
+    NE: int
     '''
-    zs = [normalize(t[ti:tj].mean(axis=0), axis=0) for t in tests]
-    fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.4*(len(zs)-1), 2), 
-                           sharey='all')
-    for i, l in enumerate(test_names[1:]):
-        ax[i].plot(zs[0], zs[i+1], 'o', ms=1, color='k')
-        ax[i].plot([-2, 5], [-2, 5], c='r', ls='--')
-        ax[i].set(xlabel=r'$z_{Correct}$', xlim=[-3, 6], ylim=[-3, 6])
-        ax[i].set_title(l, fontsize=10)
-        ax[i].axes.set_aspect('equal')
-    ax[0].set(ylabel='z', yticks=[0, 5])
-    fig.tight_layout()
-    return fig, ax
+    nonctrl_keys = [k for k in tests.keys() if k != 'ctrl']
+    n_models = len(model_names)
+    assert n_models == len(tests[nonctrl_keys[0]])
     
-def plot_corr_ctrl_nonctrl(tests, test_names, ti, tj, T_burn):
-    ''' Correlations between time-avg ctrl and nonctrl over time
-    tests: list containing the excitatory rates
-    '''
-    # zs = [normalize(t[0][ti:tj], axis=0) for t in tests]
-    zs = [t[ti:tj] for t in tests]
-    fig, ax = plt.subplots(1, len(zs)-1, figsize=(1.5*(len(tests)-1), 2), 
-                           sharey='all')
-    for i, l in enumerate(test_names[1:]):
-        corr = correlation(zs[0], zs[i+1], dim=1)
-        ax[i].plot(corr)
-        ax[i].hlines(corr[:T_burn-ti].mean(), 0, T_burn-ti, color='r')
-        ax[i].hlines(corr[T_burn-ti:].mean(), T_burn-ti, tj-ti, color='r')
-        ax[i].set_title(l, fontsize=10)
-        ax[i].set(xlabel='Time (a.u.)')
-    ax[0].set(ylabel='Corr. with \nSinging (Correct)')
-    fig.tight_layout()
-    return fig, ax
-    
-def plot_rate_and_change_dists(rEs, test_names, rE_ctrl, ti, tj):
-    ''' Histograms of rates and rate changes
-    '''
-    ls = [rE[ti:tj].mean(axis=0) for rE in rEs]
-    rE_ctrl_mean = rE_ctrl[ti:tj].mean(axis=0)
-    changes = [l - rE_ctrl_mean for l in ls]
-    lmax = max(list(map(lambda _: _.max(), ls)))
-    cmax = max(list(map(lambda _: _.max(), changes)))
-    cmin = min(list(map(lambda _: _.min(), changes)))
-    fig, ax = plt.subplots(len(ls), 2, figsize=(3, 1.2*len(ls)), 
-                           sharex='col')
-    if len(ls) == 1:
+    fig, ax = plt.subplots(len(nonctrl_keys), n_models, figsize=figsize, 
+                           sharex='all', sharey='all')
+    if len(nonctrl_keys) == 1:
         ax = ax[None,:]
-    for i, (l, c, k) in enumerate(zip(ls, changes, test_names)):
-        ax[i,0].hist(l, bins=15, range=(0, lmax), density=True, log=True)
-        ax[i,0].set_ylabel(k, fontsize=10)
-        ax[i,1].hist(c, bins=15, range=(cmin, cmax), density=True, log=True)
-        for j in (0, 1):
-            ax[i,j].set(yticks=[0.1, 1])
-    ax[-1,0].set(xlabel='Response (Hz)')
-    ax[-1,1].set(xlabel='Change (Hz)')
-    fig.tight_layout()
-    return fig, ax
-
-
-def plot_raster(model1, model2, mname1, mname2, NE, cond_names, 
-                t0, t1, t_on, t0_pert, t1_pert):
-    ''' Plot neuronal responses for different conditions
-    model1, model2: lists of neuron responses over time
-    mname1, mname2: model names
-    is_ff: 2-tuple specifying if model1 or 2 is EI network or not
-    t0, t1: time window to plot
-    t_on: song onset. Must be > 0 for sorting to work
-    t0_pert, t1_pert: time window of perturbated syl
-    '''
-    # width and height ratios
-    hr = [[1, 0.5] if md[0].shape[1]>NE else [1] for md in (model1, model2)]
-    hr = hr[0] + [0.1] + hr[1] + [0.5]
-    wr = [1]*len(model1) + [0.1]
-    i_null = 1 + int(model1[0].shape[1]>NE)
-
-    # preprocess data; zs has rows and cols corresponding to the img layout
-    zs = []
-    for md in (model1, model2):
-        mean = [m.mean(axis=0)[None,:] for m in md]
-        std = [m.std(axis=0)[None,:] for m in md]
-        zs.append([(m[t0:t1,:NE]-a[:,:NE])/s[:,:NE] for m, a, s in zip(md, mean, std)])
-        if md[0].shape[1]>NE: # Inh. as well
-            zs.append([(m[t0:t1,NE:]-a[:,NE:])/s[:,NE:] for m, a, s in zip(md, mean, std)])
-        zs.append(None) # For white space row
-    zmin, zmax = 1e10, -1e10
-    for zp in zs:
-        if zp is None:
-            continue
-        zmin_, zmax_ = min(list(map(lambda x: x.min(), zp))), max(list(map(lambda x: x.max(), zp)))
-        zmin = zmin_ if zmin > zmin_ else zmin # update
-        zmax = zmax_ if zmax < zmax_ else zmax
-    zmin, zmax = max(zmin, -3), min(zmax, 5)
-    norm = TwoSlopeNorm(0, zmin, zmax)
-    
-    fig, ax = plt.subplots(len(hr), len(wr), figsize=(6, 4), width_ratios=wr, height_ratios=hr)
-    for i in range(ax.shape[1]):
-        ax[i_null,i].set_axis_off()
-    ax[-1,-1].set_axis_off()
-
-    #### Plotting ####
-    ls = [] # for legend in the last row
-    for i, zp in enumerate(zs): # row
-        if zp is None:
-            continue
-        p = 'Exc.' if hr[i] == 1 else 'Inh.'
-
-        # sort by the first one
-        idx = temporal_sort(zp[0], 'dmean', t0=t_on)[1]
-
-        for j, (z, l) in enumerate(zip(zp, cond_names)): 
-            # plot heatmap
-            im = ax[i,j].imshow(z[:,idx].T, aspect='auto', cmap='seismic', 
-                                interpolation='none', norm=norm, rasterized=True)
-            ax[i,j].axvline(t_on, ls='--', c='k', lw=2)
-            ax[i,j].set(xticks=[], yticks=[])
-            ax[0,j].set_title(l, fontsize=10, va='bottom')
-
-            if p == 'Exc.': # plot % active in the last row
-                c, label = ('C0',mname1) if i<i_null else ('C1',mname2)
-                peaks = (z > 1).mean(axis=1) * 100
-                l, = ax[-1,j].plot(peaks, color=c, label=label)
-                if j == 0: # for legend
-                    ls.append(l)
-                ax[-1,j].axvline(t_on, ls='--', c='k', lw=2)
-                ax[-1,j].set(xlim=[0,len(peaks)], yticks=[], xlabel='Time (ms)', 
-                             xticks=[t_on, 800], xticklabels=[0, 800-t_on])
+    if n_models == 1:
+        ax = ax[:,None]
+        
+    for i in range(n_models): # models
+        ax[0,i].set_title(model_names[i])
+        
+        baseline = tests['ctrl'][i][:,:t0].mean(axis=(0,1))
+        z_ctrl = tests['ctrl'][i][:,t0:t1].mean(axis=(0,1)) - baseline
+        s = z_ctrl[:NE].std()
+        z_ctrl = z_ctrl / s
+        for j, k in enumerate(nonctrl_keys):
+            ax[j,0].set_ylabel(test_names[k])
                 
-        if i != 0:
-            ax[i,-1].set_axis_off()
-        ax[i,0].set(ylabel='\n'+p, yticks=[])
-
-    #### Color bar and labels ####
-    cbar = fig.colorbar(im, cax=ax[0,-1])
-    # cbar.set_ticks([np.ceil(zmin), 0, np.floor(zmax)-1])
-    cbar.set_ticks([np.ceil(zmin), 0, np.floor(zmax)])
-    fig.text(0.025, 0.8, mname1, rotation=90, ha='center', va='center')
-    fig.text(0.025, 0.45, mname2, rotation=90, ha='center', va='center')
-    # last row
-    fig.legend(handles=ls, loc=(0.5, 0.22), ncols=2)
-    ax[-1,0].set(yticks=[0, 40], ylabel='% excited', title='\n')
-    
-    #### Plot perturbed syl indicator ####
-    for i in (0, -1):
-        _ = max(ax[i,1].get_ylim())
-        y0, height = _ * (-0.05 if i==0 else 1.05) , _ / 20 * (1 - i)
-        ax[i,1].add_patch(plt.Rectangle((t0_pert, y0), t1_pert-t0_pert, height, fc='k', 
-                                         clip_on=False, linewidth=0))
+            baseline = tests[k][i][:,:t0].mean(axis=(0,1))
+            z_pert = tests[k][i][:,t0:t1].mean(axis=(0,1)) - baseline
+            z_pert = z_pert / s
+            
+            ax[j,i].scatter(z_ctrl[NE:], z_pert[NE:], s=8, c='grey', zorder=-2)
+            ax[j,i].scatter(z_ctrl[:NE], z_pert[:NE], s=8, c='k', zorder=-1)
+            # ax[j,i].hist2d(z_ctrl[:NE], z_pert[:NE], bins=20, norm='log', 
+            #                cmap='binary', range=((0,20),(0,20)));
+            ax[j,i].plot([-3, 50], [-3,50], c='r', ls='--', zorder=-3)
+            ax[j,i].set_rasterization_zorder(0)
+            ax[j,i].set(aspect=1, ylim=[-3,10], xlim=[-3,10], xticks=[])
+    ax[-1,0].set(xlabel=' ')
+    fig.text(0.55, 0, 'Singing correct', ha='center', va='bottom')
     return fig, ax
 
+def plot_dist_rate_diff(ctrl, pert, t0, t1, NE, figsize):
+    ''' Plot the distributions of differential population activity
+    ctrl, pert: list
+        A list (models) of arrays (simulations). 
+    t0, t1: int
+        Singing onset and offset time indices
+    NE: int
+    '''
+    from scipy.stats import skewtest
+    fig, ax = plt.subplots(1, len(ctrl), figsize=figsize, sharey='all')
+    if len(ctrl) == 1:
+        ax = ax[:,None]
+    for i in range(len(ctrl)): 
+        b_ctrl = ctrl[i][:,:t0].mean(axis=(0,1))
+        b_pert = pert[i][:,:t0].mean(axis=(0,1))
+        z_ctrl = ctrl[i][:,t0:t1].mean(axis=(0,1)) - b_ctrl
+        z_pert = pert[i][:,t0:t1].mean(axis=(0,1)) - b_pert
+        s = z_ctrl[:NE].std()
+        z_ctrl = z_ctrl / s
+        z_pert = z_pert / s
+        diff = z_pert - z_ctrl
+        diff = diff[:NE]
+        test = skewtest(diff, alternative='greater')
+        pval = test.pvalue
+        print(pval)
+        m = max(-diff.max(), diff.max(), 1)
+        ax[i].hist(diff, bins=11, range=(-m, m), density=True)
+        ax[i].set(xticks=[-int(m), 0, int(m)])
+        ax[i].set_title('%.2f' % test.statistic, 
+                        fontweight='bold' if test.statistic>0 else 'normal')
+    ax[0].set(xlabel=' ', ylabel='density', yscale='log')
+    return fig, ax
 
 ######## Axis-level plotting ########
 def plot_mean_std(ax, mean, std, a_fill, c, ls='-', lw=1.5, xs=None, label=''):
