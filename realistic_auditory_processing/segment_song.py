@@ -75,7 +75,7 @@ for f in NOTE_FILES:
         # song spectrum with perturbation between pert_t0 and pert_t1
         ts = np.linspace(0, T, endpoint=False, num=len(song)) # ms
         pert_t0 = t0[pert_syl_idx] - t0[0]
-        pert_t1 = min(pert_t0+100, t1[pert_syl_idx]-t0[0])
+        pert_t1 = min(pert_t0+50, t1[pert_syl_idx]-t0[0])
         mask = (ts >= pert_t0) & (ts < pert_t1)
         song_pert = (song.copy(), song.copy())
         song_pert[0][mask] += rng.normal(0, 5e3, size=mask.sum())

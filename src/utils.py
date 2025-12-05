@@ -127,3 +127,31 @@ def PCA_proj(data, n_components=3, normalize_data=True):
     flip = proj.max(axis=batch_axes) < -proj.min(axis=batch_axes)
     vec[flip], proj[...,flip] = -vec[flip], -proj[...,flip]
     return vec, val, proj
+
+
+def wasserstein_distance_exp_vs_model(mean, model_names):
+    ''' Compute the Wasserstein distance between experimental data and model simulations
+    '''
+    from scipy.stats import wasserstein_distance_nd
+
+    nonctrl_keys = [k for k in mean.keys() if k != 'ctrl']
+    n_models = len(model_names)
+    assert n_models == len(mean['ctrl'])
+    
+    exp_data = np.load('../experiment_data_new/processed.npz')
+    exp_data = [np.stack((exp_data['mean_corr'], exp_data['mean_pert']), 1), 
+                np.stack((exp_data['mean_predeaf'], exp_data['mean_postdeaf']), 1)]
+    # rescale experimental data
+    exp_data[0] /= exp_data[0][:,0].std()
+    exp_data[1] /= exp_data[1][:,1].std()
+
+    dist = dict()
+    for j, k in enumerate(nonctrl_keys):
+        dist[k] = []
+        for i in range(n_models): # models
+            model_data = np.stack((mean['ctrl'][i], mean[k][i]), 1)
+            scale = mean['ctrl'][i].std()
+            model_data = model_data / scale
+
+            dist[k].append(wasserstein_distance_nd(model_data, exp_data[0 if 'pert' in k else 1]))
+    return dist

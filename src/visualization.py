@@ -6,8 +6,7 @@ from matplotlib.colors import TwoSlopeNorm, Normalize
 
 
 def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end, 
-                             plot_z=False, sort_by='e', th=5,
-                             tpre=100, figsize=(2, 3)):
+                             sort_by='e', th=5, tpre=100, figsize=(2, 3)):
     ''' visualize correct and perturbed responses
     rEs: list of (T, NE) arrays. 
     sort_by: 'p' => pattern, or 'e' => error
@@ -15,15 +14,9 @@ def plot_raster_cmp_syl_dsyl(rEs, test_names, syl, dsyl, t_start, t_end,
     ti, tj = int(t_start - tpre), int(t_end)
 
     N = rEs[0].shape[1]
-    if plot_z:
-        zs = np.stack([normalize(_[ti:tj], axis=0) for _ in rEs], axis=0)
-        zmin = max(min(list(map(lambda _: _[0].min(), zs))), -5)
-        zmax = min(max(list(map(lambda _: _[0].max(), zs))), 5)
-        norm = TwoSlopeNorm(0, zmin, zmax)
-    else:
-        zs = np.stack([_[ti:tj] for _ in rEs], axis=0)
-        zmax = min(max(list(map(lambda _: _[0].max(), zs))), th)
-        norm = Normalize(0, zmax)
+    zs = np.stack([_[ti:tj] for _ in rEs], axis=0)
+    zmax = min(max(list(map(lambda _: _[0].max(), zs))), th)
+    norm = Normalize(0, zmax)
         
     idx_s = np.argsort(syl)[::-1]
     idx_ds = [np.argsort(_)[::-1] for _ in dsyl]
@@ -97,95 +90,20 @@ def plot_corr_mat(Ws, ctrl, pert=None, sortby=None, vmin=-1, vmax=1, **ax0kwargs
     ax[0].set(**ax0kwargs)
     cax = fig.colorbar(im, ax=ax, label='Correlation', ticks=[vmin, 0, vmax])
     return fig, ax
-    
-def plot_tests_corrs(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
-                     syl_order=dict(), y=0.9, cosine=False):
-    ''' Correlations with syls and errors over time
-    tests: list containing the excitatory rates
-    syl_tests: sylabi used for tests
-    syl: control case
-    ti, tj: the start and end time to plot
-    tid_perturb_input: the index of the tests with perturbed aud input
-    syl_order: a dictionary {test_index: [(syl_index, t_start, t_end)...]}. 
-        If given, plot horizontal bars indicate the onset of each syllabus.
-    y: the vertical offset of the horizontal bars
-    '''
-    cmap = plt.get_cmap('plasma')
-    fig, ax = plt.subplots(2, len(tests), sharey='row', sharex='all', 
-                           figsize=(1.25*len(tests), 3))
-    for i, (test, syl_, l) in enumerate(zip(tests, syl_tests, test_names)):
-        corr = correlation(test[ti:tj], syl, dim=2)
-        ax[0,i].set_title(l, fontsize=10)
-        ax[-1,i].set(xlabel='Time (a.u.)')
-        for j in range(corr.shape[1]):
-            ax[0,i].plot(corr[:,j], c=cmap(j/syl.shape[0]))
-        if i in tid_perturb_input: # non-zero error; calc corr
-            if syl_ is None: # deafen
-                syl_ = 0
-            corr = correlation(test[ti:tj], syl_ - syl, dim=2)
-            for j in range(corr.shape[1]):
-                ax[1,i].plot(corr[:,j], c=cmap(j/syl.shape[0]))
 
-    for k, v in syl_order.items():
-        for (i, t0, t1) in v:
-            ax[0,k].plot([t0, t1], [y, y], color=cmap(i/syl.shape[0]), lw=3)
-            ax[0,k].text(t0, y - 0.1, chr(65+i), color=cmap(i/syl.shape[0]), va='top')
-            
-    ax[0,0].set(ylabel=r'corr$(r^E, \xi)$')
-    ax[1,0].set(ylabel=r'corr$(r^E, y - \xi)$')
-    fig.tight_layout()
-    return fig, ax
-    
-def plot_tests_corrs_simple(tests, syl_tests, syl, test_names, ti, tj, tid_perturb_input,
-                            syl_order=dict(), y=0.9, cosine=False):
-    ''' Correlations with syls and errors over time, see `plot_tests_corrs`
-    '''
-    cmap = plt.get_cmap('plasma')
-    n_unpert = len(tests) - len(tid_perturb_input)
-    fig, ax = plt.subplots(1, len(tests), sharex='all', figsize=(1.5*len(tests), 2))
-    p, q = 0, 0
-    for i, (test, syl_, l) in enumerate(zip(tests, syl_tests, test_names)):
-        if i in tid_perturb_input: # plot corr with error
-            axi, yl = p + n_unpert, 'corr. with error'
-            if syl_ is None: # deafen
-                syl_ = 0
-            corr = correlation(test[ti:tj], syl_ - syl, dim=2)
-            p += 1
-        else: # plot corr with syl pattern
-            axi, yl = q, 'corr. with syllable'
-            corr = correlation(test[ti:tj], syl, dim=2)
-            q += 1
-        
-        for j in range(corr.shape[1]):
-            ax[axi].plot(corr[:,j], c=cmap(j/syl.shape[0]))
-        ax[axi].set_title(l, fontsize=10)
-        ax[axi].set(yticks=[0, 1], ylim=[-0.5, y+0.1], ylabel=yl, xlabel='Time')
-
-        v = syl_order.get(i)
-        if v is not None:
-            for (j, t0, t1) in v:
-                ax[axi].plot([t0, t1], [y, y], color=cmap(j/len(v)), lw=3)
-                ax[axi].text(t0, y - 0.1, chr(65+j), color=cmap(j/len(v)), va='top')
-
-    fig.tight_layout()
-    return fig, ax
-
-def plot_ctrl_vs_nonctrl(tests, test_names, model_names, t0, t1, NE, figsize):
+def plot_ctrl_vs_nonctrl(mean, se, test_names, model_names, figsize):
     ''' Plot the joint distributions between ctrl and noncontrol conditions
-    tests: dict
-        Dictionary (test conditions) of lists (models) of arrays (simulations). 
+    mean, se: dict
+        Dictionary (cases) of lists (models) of arrays (simulations). 
         Must contain the key 'ctrl'. 
     test_names: dict
         Keys are the keys of tests that are not 'ctrl'
     model_names: array-like
-        Corresponds to the list in each test condition.
-    t0, t1: int
-        Singing onset and offset time indices
-    NE: int
+        Corresponds to the list in each test conditions
     '''
-    nonctrl_keys = [k for k in tests.keys() if k != 'ctrl']
+    nonctrl_keys = [k for k in mean.keys() if k != 'ctrl']
     n_models = len(model_names)
-    assert n_models == len(tests[nonctrl_keys[0]])
+    assert n_models == len(mean['ctrl'])
     
     fig, ax = plt.subplots(len(nonctrl_keys), n_models, figsize=figsize, 
                            sharex='all', sharey='all')
@@ -193,62 +111,52 @@ def plot_ctrl_vs_nonctrl(tests, test_names, model_names, t0, t1, NE, figsize):
         ax = ax[None,:]
     if n_models == 1:
         ax = ax[:,None]
-        
+
     for i in range(n_models): # models
         ax[0,i].set_title(model_names[i])
+        scale = max([v[i].std() for k, v in mean.items()]) / 2
         
-        baseline = tests['ctrl'][i][:,:t0].mean(axis=(0,1))
-        z_ctrl = tests['ctrl'][i][:,t0:t1].mean(axis=(0,1)) - baseline
-        s = z_ctrl[:NE].std()
-        z_ctrl = z_ctrl / s
+        idx = np.random.choice(mean['ctrl'][i].shape[0], size=300, replace=False)
         for j, k in enumerate(nonctrl_keys):
             ax[j,0].set_ylabel(test_names[k])
-                
-            baseline = tests[k][i][:,:t0].mean(axis=(0,1))
-            z_pert = tests[k][i][:,t0:t1].mean(axis=(0,1)) - baseline
-            z_pert = z_pert / s
             
-            ax[j,i].scatter(z_ctrl[NE:], z_pert[NE:], s=8, c='grey', zorder=-2)
-            ax[j,i].scatter(z_ctrl[:NE], z_pert[:NE], s=8, c='k', zorder=-1)
-            # ax[j,i].hist2d(z_ctrl[:NE], z_pert[:NE], bins=20, norm='log', 
-            #                cmap='binary', range=((0,20),(0,20)));
+            ax[j,i].errorbar(mean['ctrl'][i][idx]/scale, mean[k][i][idx]/scale, 
+                             xerr=se['ctrl'][i][idx]/scale, yerr=se[k][i][idx]/scale, 
+                             fmt='o', ms=2, c='w', mec='k', mew=1, 
+                             ecolor='k', elinewidth=1, zorder=-1)
+
             ax[j,i].plot([-3, 50], [-3,50], c='r', ls='--', zorder=-3)
             ax[j,i].set_rasterization_zorder(0)
-            ax[j,i].set(aspect=1, ylim=[-3,10], xlim=[-3,10], xticks=[])
+            ax[j,i].set(aspect=1, xticks=[], ylim=[-3,7], xlim=[-3,7])
     ax[-1,0].set(xlabel=' ')
     fig.text(0.55, 0, 'Singing correct', ha='center', va='bottom')
     return fig, ax
 
-def plot_dist_rate_diff(ctrl, pert, t0, t1, NE, figsize):
+def plot_dist_rate_diff(ctrl, pert, t0, t1, figsize):
     ''' Plot the distributions of differential population activity
     ctrl, pert: list
         A list (models) of arrays (simulations). 
     t0, t1: int
         Singing onset and offset time indices
-    NE: int
     '''
-    from scipy.stats import skewtest
+    from scipy.stats import wilcoxon
     fig, ax = plt.subplots(1, len(ctrl), figsize=figsize, sharey='all')
     if len(ctrl) == 1:
         ax = ax[:,None]
     for i in range(len(ctrl)): 
-        b_ctrl = ctrl[i][:,:t0].mean(axis=(0,1))
-        b_pert = pert[i][:,:t0].mean(axis=(0,1))
-        z_ctrl = ctrl[i][:,t0:t1].mean(axis=(0,1)) - b_ctrl
-        z_pert = pert[i][:,t0:t1].mean(axis=(0,1)) - b_pert
-        s = z_ctrl[:NE].std()
-        z_ctrl = z_ctrl / s
-        z_pert = z_pert / s
+        z_ctrl = ctrl[i] # (trials, time, neurons)
+        z_ctrl = z_ctrl[:,t0:t1].mean(axis=1) - ctrl[i][:,:t0].mean(axis=1)
+        z_ctrl = z_ctrl.mean(axis=0)
+        z_pert = pert[i] # (trials, time, neurons)
+        z_pert = z_pert[:,t0:t1].mean(axis=1) - pert[i][:,:t0].mean(axis=1)
+        z_pert = z_pert.mean(axis=0)
         diff = z_pert - z_ctrl
-        diff = diff[:NE]
-        test = skewtest(diff, alternative='greater')
-        pval = test.pvalue
-        print(pval)
-        m = max(-diff.max(), diff.max(), 1)
+        diff = diff
+        test = wilcoxon(diff, alternative='greater')
+        print(test.pvalue)
+        m = np.abs(diff).max()
         ax[i].hist(diff, bins=11, range=(-m, m), density=True)
         ax[i].set(xticks=[-int(m), 0, int(m)])
-        ax[i].set_title('%.2f' % test.statistic, 
-                        fontweight='bold' if test.statistic>0 else 'normal')
     ax[0].set(xlabel=' ', ylabel='density', yscale='log')
     return fig, ax
 

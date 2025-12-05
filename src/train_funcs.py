@@ -114,7 +114,7 @@ def read_realistic_input(fname, NE, mean, scale, mapping, mapping_args):
             raise NotImplementError
         assert (s1 == N_in) and (s2 == NE)
         
-    for k in ('ctrl', 'pert_weak', 'pert_strong'):
+    for k in ('ctrl', 'pert'):
         # swap, project, and then swap back
         aud_real[k] = np.swapaxes(np.swapaxes(aud_real[k], 1, 2) @ mapping, 1, 2)
         aud_real[k] = aud_real[k] / aud_real[k].std() # normalize
