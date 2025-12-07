@@ -69,7 +69,7 @@ elif HVC_COND == 'developing_hvc':
         kernel_widths[:,i] += rng.exponential(60*j, size=N_HVC)
     rH = generate_HVC(T, burst_ts, peak_rates, kernel_widths)
 else:
-    raise NotImplementError
+    raise NotImplementedError
 
 ### Initialize recurrent weights
 gen = lognormal_gen
@@ -85,7 +85,7 @@ JII = generate_matrix(NI, NI, gen, c, rng=rng, mean=JII0, std=sII, sparse=True)
 
 ## Initialize networks
 ### FF and EI (HVC->E)
-w0_mean_HVC2E, w0_std_HVC2E, cW_HVC2E = 1/N_HVC, 1e-2, 1
+w0_mean_HVC2E, w0_std_HVC2E, cW_HVC2E = 1/N_HVC, 0, 1
 
 net_FF = WCNet(NE, N_HVC, w0_mean_HVC2E, (rEmax, thE+6, slope), tauE, w0_std=w0_std_HVC2E, cW=cW_HVC2E)
 net_HVC2E = EINet(NE, NI, N_HVC, w0_mean_HVC2E, (rEmax, thE+6, slope), (rImax, thI, slope), tauE, tauI, 
