@@ -1,6 +1,6 @@
 # Generate sparse embeddings of spectrograms of real adult bird song syllables
 
-*If your goal is just to simulate our network models using realistic data, you can download the data* [here](https://app.box.com/s/9uu0zwzoqw5qd4ghijg220juxy912mye). If you want to learn more about the process to generate sparse embeddings of spectrograms of real adult bird song syllables, you can read below.
+*If your goal is just to simulate our network models using realistic data, you can download the data* [here](https://doi.org/10.7924/r4gf12r3d). If you want to learn more about the process to generate sparse embeddings of spectrograms of real adult bird song syllables, you can read below.
 
 We used a combination of adult songs and audios recorded around young birds (sound due to behaviors and calls). Labelled adult songs are available at this [dataset](https://doi.org/10.18738/T8/SAWMUN) by Therese Koch and was preprocessed by `segment_song.py` to segment syllables and generate spectrograms. 
 
