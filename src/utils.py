@@ -110,7 +110,7 @@ def temporal_sort(r, by, t0=0):
     idx_all = np.hstack([np.where(mask_pos)[0][idx_pos], 
                          np.where(mask_neg)[0][idx_neg]])
     r_ret = r[:,idx_all]
-    return r_ret, idx_all
+    return r_ret, idx_all, when_ri_peak[idx_all] + t0
 
 def PCA_proj(data, n_components=3, normalize_data=True):
     ''' data : (trials, T, neurons) or (T, neurons)
