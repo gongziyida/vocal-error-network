@@ -138,7 +138,7 @@ def wasserstein_distance_exp_vs_model(mean, model_names):
     n_models = len(model_names)
     assert n_models == len(mean['ctrl'])
     
-    exp_data = np.load('../experiment_data_new/processed.npz')
+    exp_data = np.load('../experiment_data/processed.npz')
     exp_data = [np.stack((exp_data['mean_corr'], exp_data['mean_pert']), 1), 
                 np.stack((exp_data['mean_predeaf'], exp_data['mean_postdeaf']), 1)]
     # rescale experimental data
