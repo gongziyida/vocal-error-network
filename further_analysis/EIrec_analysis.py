@@ -216,6 +216,8 @@ def response(nets, var_dir, n_points, i_pert=3):
 
 
 ## Test 1: response to various inputs during training
+print('Testing response to various inputs during training...')
+
 nets = [load_network(J) for J in Js]
 # off-manifold variation, i.e., varying the pattern
 rate_offm = response(nets, 'pattern', n_points=6)
@@ -230,6 +232,8 @@ del rate_onm, rate_offm, nets, to_save # free up memory
 
 
 ## Test 2: post-training mode perturbation response to various inputs
+print('Testing post-training mode perturbation response to various inputs...')
+
 rate_onm = [] # on-manifold variation, i.e., varying the amplitude
 rate_offm = [] # off-manifold variation, i.e., varying the pattern
 
