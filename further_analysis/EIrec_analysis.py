@@ -173,14 +173,14 @@ def response(nets, var_dir, n_points, i_pert=3):
     Parameters
     ----------
     nets: list of EINet
-    var_dir: Direction of variation. Either 'song' or 'other'.
-    n_points: Number of `a` to test, required if `var_dir='other'`.
+    var_dir: Direction of variation. Either 'amplitude' or 'pattern'.
+    n_points: Number of `a` to test, required if `var_dir='pattern'`.
     '''
     T_test = T_burn + T_rend
     tsyl_start, tsyl_end = generate_syl_time(T_test, T_burn, T_rend, syl.shape[0], N_HVC)[:2]
     
-    if var_dir == 'song':
-        a_vals = np.linspace(0, 1, num=n_points) # song scalings
+    if var_dir == 'amplitude':
+        a_vals = np.linspace(0, 1, num=n_points) # amplitude scalings
     else:
         a_vals = np.linspace(0, 1, num=n_points) # SNR
         step = mapping.shape[1] // mapping.shape[0]
@@ -195,10 +195,10 @@ def response(nets, var_dir, n_points, i_pert=3):
     hI0 = rng.normal(loc=-1, scale=0.5, size=NI)    
     
     for a in a_vals:
-        if var_dir == 'other':
+        if var_dir == 'pattern':
             bos[i_pert] = syl[i_pert] * np.sqrt(1 - a**2) + pert * a
             aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, bos)
-        elif var_dir == 'song':
+        elif var_dir == 'amplitude':
             aud_test = generate_discrete_aud(T_test, NE, tsyl_start, tsyl_end, syl) * a
         
         args = (hE0, hI0, rH[:T_test], aud_test, [], T_test, dt, 0.1)
@@ -210,8 +210,8 @@ def response(nets, var_dir, n_points, i_pert=3):
 
 
 ## Testing
-rate_onm = [] # on-manifold variation
-rate_offm = [] # off-manifold variation
+rate_onm = [] # on-manifold variation, i.e., varying the amplitude
+rate_offm = [] # off-manifold variation, i.e., varying the pattern
 
 for pert_mode in tqdm(('shuffleAll', 'shuffleE', 'noise', 'zero', 'swap')):
     for i in range(5):
@@ -222,8 +222,8 @@ for pert_mode in tqdm(('shuffleAll', 'shuffleE', 'noise', 'zero', 'swap')):
         net_disr_ctrl, J_disr_ctrl = disrupt_conn(svds, k_sel, mode=pert_mode)
     
         nets = [net, net_disr_mem, net_disr_land, net_disr_ctrl]
-        rate_offm.append(response(nets, 'other', n_points=6))
-        rate_onm.append(response(nets, 'song', n_points=6))
+        rate_offm.append(response(nets, 'pattern', n_points=6))
+        rate_onm.append(response(nets, 'amplitude', n_points=6))
     
     to_save = dict(order=['original', 'memory', 'landscape', 'rand'],
                    on_manifold=rate_onm, off_manifold=rate_offm)
