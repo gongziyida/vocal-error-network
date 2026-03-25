@@ -43,7 +43,7 @@ def characterize_memory(svds, song, l_or_r='left', th_quantile=1, method='max'):
     elif method == 'mean':
         memory_encode = np.abs(np.stack(corr_song,0)).mean(axis=-1)
     else:
-        raise NotImplementError
+        raise NotImplementedError
     # # choose the curve with larger abs corr
     # mask = (memory_encode_l[-1] > memory_encode_r[-1]).astype(int)[None,:]
     # memory_encode = memory_encode_l * mask + memory_encode_r * (1 - mask)

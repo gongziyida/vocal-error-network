@@ -115,6 +115,15 @@ i_landscape = [i for i in i_nonmem if i != 0 and i < k_other]
 i_others = [i for i in i_nonmem if i >= k_other]
 
 ## Helper functions
+def load_network(J):
+    new_net = EINet(NE, NI, N_HVC, w0_mean, 
+                    (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
+                    JEE=J[:NE,:NE], JEI=-J[:NE,NE:], 
+                    JIE=J[NE:,:NE], JII=-J[NE:,NE:], 
+                    w0_std=0, cW=cW)
+    new_net.W = net.W.copy()
+    return new_net
+
 def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
     ''' Shuffle selected left singular vectors (modes) and generate the disrupted network
     svds: Sequences of output of scipy.linalg.svd
@@ -135,7 +144,8 @@ def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
         assert np.allclose(np.linalg.norm(U, axis=0), 1), np.linalg.norm(U, axis=0)
         # V_mem_encode = ((V[:,:NE] @ mem_basis.T)[:,None,:] * mem_basis.T[None,:,:]).sum(axis=-1)
         # V[:,:NE] -= V_mem_encode
-        # V[:,:NE] *= np.sqrt((1 - (V[:,NE:]**2).sum(axis=1)[:,None]) / (V[:,:NE]**2).sum(axis=1)[:,None])
+        # V[:,:NE] *= np.sqrt((1 - (V[:,NE:]**2).sum(axis=1)[:,None]) / 
+        #                     (V[:,:NE]**2).sum(axis=1)[:,None])
         # assert np.allclose(np.linalg.norm(V, axis=1), 1), np.linalg.norm(V, axis=0)
     elif mode == 'shuffleE':
         idx_shuff = np.arange(0, NE)
@@ -158,18 +168,14 @@ def disrupt_conn(svds, idx_disrupt, mode, t1=-1):
     J_disr = svd_post[0][:,idx] @ np.diag(svd_post[1][idx]) @ svd_post[2][idx,:] \
               + U @ np.diag(svd_post[1][idx_disrupt]) @ V
 
-    net_disr = EINet(NE, NI, N_HVC, w0_mean, 
-                        (rEmax, thE, slope), (rImax, thI, slope), tauE, tauI, 
-                        JEE=J_disr[:NE,:NE], JEI=-J_disr[:NE,NE:], 
-                        JIE=J_disr[NE:,:NE], JII=-J_disr[NE:,NE:], 
-                        w0_std=0, cW=cW)
-    net_disr.W = net.W.copy()
+    net_disr = load_network(J_disr)
 
     return net_disr, J_disr
 
 
 def response(nets, var_dir, n_points, i_pert=3):
-    ''' Probe the networks' responses to perturbations. Return averaged response (nets, n_points, NE).
+    ''' Probe the networks' responses to perturbations. 
+    Return averaged response of shape (nets, n_points, NE).
     Parameters
     ----------
     nets: list of EINet
@@ -209,7 +215,21 @@ def response(nets, var_dir, n_points, i_pert=3):
     return np.stack([np.stack(i, axis=0) for i in li], axis=0)
 
 
-## Testing
+## Test 1: response to various inputs during training
+nets = [load_network(J) for J in Js]
+# off-manifold variation, i.e., varying the pattern
+rate_offm = response(nets, 'pattern', n_points=6)
+# on-manifold variation, i.e., varying the amplitude
+rate_onm = response(nets, 'amplitude', n_points=6)
+
+to_save = dict(on_manifold=rate_onm, off_manifold=rate_offm)
+with open(f'../results/{REC_PLASTICITY}_response_during_training_{TID}.pkl', 'wb') as f:
+    pickle.dump(to_save, f)
+
+del rate_onm, rate_offm, nets, to_save # free up memory
+
+
+## Test 2: post-training mode perturbation response to various inputs
 rate_onm = [] # on-manifold variation, i.e., varying the amplitude
 rate_offm = [] # off-manifold variation, i.e., varying the pattern
 
