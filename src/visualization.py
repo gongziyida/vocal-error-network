@@ -161,11 +161,12 @@ def plot_dist_rate_diff(ctrl, pert, t0, t1, figsize):
     return fig, ax
 
 ######## Axis-level plotting ########
-def plot_mean_std(ax, mean, std, a_fill, c, ls='-', lw=1.5, xs=None, label=''):
+def plot_mean_std(ax, mean, std, a_fill, c, ls='-', lw=1.5, xs=None, label='', a_line=1):
     if xs is None:
         xs = np.arange(len(mean))
-    ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
-    return ax.plot(xs, mean, c=c, label=label, ls=ls, lw=lw)
+    if std is not None and a_fill > 0:
+        ax.fill_between(xs, mean+std, mean-std, color=c, alpha=a_fill)
+    return ax.plot(xs, mean, c=c, label=label, ls=ls, lw=lw, alpha=a_line)
 
 
 def draw_traj(ax, traj, cmaps, zorders, dt=5):
